@@ -21,8 +21,8 @@ For initial Pages setup, a repository administrator selects **Settings → Pages
 To reproduce the build on Linux x86-64, run:
 
 ```sh
-ci/install-godot-web.sh
-ci/build-web.sh
+bash ci/install-godot-web.sh
+bash ci/build-web.sh
 python3 -m http.server 8000 --directory build/web
 ```
 
