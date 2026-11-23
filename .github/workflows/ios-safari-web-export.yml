@@ -1,0 +1,67 @@
+name: Godot Web Export — iPhone Safari Feasibility
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: godot-web-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-web:
+    name: Smoke test and export
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache Godot 4.7.2 and the single-threaded Web template
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/bin/godot-4.7.2
+            ~/.local/share/godot/export_templates/4.7.2.stable/web_nothreads_release.zip
+          key: godot-4.7.2-stable-linux-x86_64-web-nothreads
+      - name: Install Godot 4.7.2 and matching Web template
+        run: bash ci/install-godot-web.sh
+      - name: Import, smoke-test and export
+        run: bash ci/build-web.sh
+      - name: Upload playable build files
+        uses: actions/upload-artifact@v4
+        with:
+          name: survivor-island-phase0-web-${{ github.run_number }}
+          path: build/web/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy-pages:
+    name: Publish GitHub Pages preview
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build-web
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Download the smoke-tested export
+        uses: actions/download-artifact@v4
+        with:
+          name: survivor-island-phase0-web-${{ github.run_number }}
+          path: build/web/
+      - name: Prepare GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: build/web/
+      - name: Deploy browser preview
+        id: deployment
+        uses: actions/deploy-pages@v4
