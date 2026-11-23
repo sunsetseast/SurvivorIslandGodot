@@ -39,6 +39,12 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Upload GitHub Pages artifact
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: build/web/
+
   deploy-pages:
     name: Publish GitHub Pages preview
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -53,15 +59,6 @@ jobs:
     steps:
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
-      - name: Download the smoke-tested export
-        uses: actions/download-artifact@v4
-        with:
-          name: survivor-island-phase0-web-${{ github.run_number }}
-          path: build/web/
-      - name: Prepare GitHub Pages artifact
-        uses: actions/upload-pages-artifact@v4
-        with:
-          path: build/web/
       - name: Deploy browser preview
         id: deployment
         uses: actions/deploy-pages@v4
