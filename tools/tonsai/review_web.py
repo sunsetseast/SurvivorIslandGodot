@@ -58,26 +58,81 @@ def exercise(page, captures):
     page.screenshot(path=captures / "explore.png")
     cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
     until(page, lambda m: m["clip"] == "Idle", "Motion persisted after releasing the stick")
-    tap(page, "quality")
-    page.wait_for_timeout(550)
-    economy = [metrics(page)]
-    for _ in range(4):
-        page.wait_for_timeout(400)
-        economy.append(metrics(page))
-    tap(page, "quality")
-    page.wait_for_timeout(550)
-    full = [metrics(page)]
-    for _ in range(4):
-        page.wait_for_timeout(400)
-        full.append(metrics(page))
-    return {
-        name: {metric: median(entry[metric] for entry in samples) for metric in ("fps", "draws", "primitives")}
-        for name, samples in (("economy", economy), ("full", full))
-    }
 
 
 def signed_turn(start, end):
     return atan2(sin(end - start), cos(end - start))
+
+
+def changed_touch_slots(page, captures):
+    """Drive the export's real changedTouches handler, including slot corruption."""
+    page.evaluate("window.tonsaiView('shore-start')")
+    start = until(page, lambda m: -54.2 < m["x"] < -53.8 and abs(signed_turn(pi / 2, m["yaw"])) < .01,
+                  "Could not reset the multitouch test")
+    assert start["build"] == "2.5 Touch 1", start
+    tap(page, "diagnostics")
+    tap(page, "touch_trace")
+    page.evaluate("""([x, y]) => {
+        const canvas = document.querySelector('canvas');
+        const box = canvas.getBoundingClientRect();
+        const touch = (id, u, v) => new Touch({
+            identifier: id, target: canvas, clientX: box.left + u * box.width,
+            clientY: box.top + v * box.height
+        });
+        const emit = (type, changedTouches, touches) => canvas.dispatchEvent(new TouchEvent(type, {
+            changedTouches, touches, targetTouches: touches, bubbles: true, cancelable: true
+        }));
+        const right = touch(1738566071, .66, .49);
+        const left = touch(1738566069, x, y);
+        const forward = touch(left.identifier, x, y - .13);
+        emit('touchstart', [left, right], [left, right]);
+        // Only the right finger is in the batch, so the engine subtracts slot 0
+        // from the left finger's preceding start even though the right is still.
+        emit('touchmove', [right], [left, right]);
+        emit('touchmove', [forward, right], [forward, right]);
+        emit('touchmove', [right, forward], [forward, right]);
+        emit('touchend', [forward], [right]);
+        emit('touchmove', [right], [right]);
+        emit('touchstart', [left], [left, right]);
+        emit('touchmove', [forward], [forward, right]);
+        emit('touchmove', [right], [forward, right]);
+        window.tonsaiFinishTouchTest = () => {
+            const movedRight = touch(right.identifier, .66 + .07 * box.height / box.width, .49);
+            emit('touchmove', [movedRight], [forward, movedRight]);
+            emit('touchcancel', [movedRight, forward], []);
+        };
+    }""", start["controls"]["stick"])
+    state = until(page, lambda m: m["move_finger"] == 1738566069 and m["look_finger"] == 1738566071
+                  and m["travel"] > start["travel"] + .12, "Interleaved touches lost ownership")
+    assert abs(signed_turn(start["yaw"], state["yaw"])) < .003, state
+    assert abs(signed_turn(start["yaw"] + pi, state["heading"])) < .03, state
+    page.evaluate("window.tonsaiFinishTouchTest()")
+    state = until(page, lambda m: m["look_finger"] == m["move_finger"] == -1
+                  and abs(signed_turn(start["yaw"], m["yaw"])) > .02, "Look drag or touch cancellation was lost")
+    assert abs(signed_turn(start["yaw"], state["yaw"]) + .07 * 2.07) < .01, state
+    tap(page, "touch_trace")
+    dialog = page.get_by_role("dialog", name="Touch diagnostic trace")
+    field = dialog.get_by_role("textbox", name="Trace JSON")
+    report_text = field.input_value()
+    report = json.loads(report_text)
+    reports = [dict(zip(report["event_columns"], row)) for row in report["events"]]
+    corrupted = [row for row in reports if row["event"] == "drag" and row["owner"] == "look"
+                 and hypot(row["delta_x"], row["delta_y"]) < .05 and abs(row["relative_x"]) > 100]
+    assert corrupted and report["frames"], report
+    page.context.grant_permissions(["clipboard-read", "clipboard-write"])
+    dialog.get_by_role("button", name="Copy", exact=True).click()
+    dialog.get_by_text("Trace copied").wait_for()
+    assert page.evaluate("navigator.clipboard.readText()") == report_text
+    page.context.clear_permissions()
+    dialog.get_by_role("button", name="Close").click()
+    tap(page, "diagnostics")
+    (captures / "touch-slot-corruption.json").write_text(report_text + "\n")
+    return {
+        "corrupted_stationary_look_events": len(corrupted),
+        "largest_false_relative_x": max(abs(row["relative_x"]) for row in corrupted),
+        "largest_applied_delta_x": max(abs(row["delta_x"]) for row in corrupted),
+        "clipboard": "passed",
+    }
 
 
 def sustained_touch(page, captures):
@@ -103,6 +158,7 @@ def sustained_touch(page, captures):
     worst_heading_error = 0.0
     min_velocity_alignment = 1.0
     dispatch("touchStart", left, right)
+    page.evaluate("window.tonsaiView('trace-start')")
     # Cross the original split with the look finger while the left stick
     # remains held and reverse the swipe repeatedly.
     for fraction in (.89, .66, .42, .30, .61, .86):
@@ -125,14 +181,41 @@ def sustained_touch(page, captures):
         worst_drift = max(worst_drift, abs(dx * forward_z - dz * forward_x))
     assert state["travel"] > start["travel"] + .8, state
     assert min_velocity_alignment > .98 and worst_heading_error < .08 and worst_drift < .15, state
-    page.screenshot(path=captures / "held-forward-orbit.png")
+    controller = state["controller"]
+    page.screenshot(path=captures / f"held-forward-orbit-{controller}.png")
     dispatch("touchCancel")
     until(page, lambda m: m["move_finger"] == m["look_finger"] == -1, "Canceled fingers stayed active")
+    page.evaluate("window.tonsaiView('trace-stop')")
+    trace = page.evaluate("JSON.parse(window.tonsaiTrace)")
+    columns = ("dt", "target_yaw", "target_pitch", "view_yaw", "view_pitch",
+               "x", "y", "z", "vx", "vz", "heading", "boom", "obstructed", "swipe_x", "swipe_y",
+               "camera_x", "camera_y", "camera_z", "move_finger", "look_finger", "intent_x", "intent_z", "time_usec")
+    assert len(trace) >= 6
+    assert all(len(frame) == len(columns) for frame in trace)
+    (captures / f"camera-frames-{controller}.json").write_text(
+        json.dumps({"columns": columns, "frames": trace}, separators=(",", ":")) + "\n"
+    )
     return {
         "min_velocity_alignment": min_velocity_alignment,
         "max_heading_error_rad": worst_heading_error,
         "max_cross_track_drift_m": worst_drift,
+        "max_rendered_yaw_step_rad": max(abs(signed_turn(a[3], b[3])) for a, b in zip(trace, trace[1:])),
+        "median_frame_ms": median(b[-1] - a[-1] for a, b in zip(trace, trace[1:])) / 1000,
+        "obstructed_frames": sum(row[12] for row in trace),
     }
+
+
+def measure_quality(page):
+    results = {}
+    for name in ("full", "economy"):
+        values = []
+        for _ in range(3):
+            page.wait_for_timeout(450)
+            values.append(metrics(page))
+        results[name] = {key: median(value[key] for value in values) for key in ("fps", "draws", "primitives")}
+        tap(page, "quality")
+        until(page, lambda m: m["economy"] == (name == "full"), "Quality switch did not apply")
+    return results
 
 
 def swim(page, captures):
@@ -178,6 +261,7 @@ def main():
             "--no-sandbox", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
         ])
         page = browser.new_page(viewport={"width": 956, "height": 440}, has_touch=True)
+        page.set_default_timeout(60000)
         errors = []
         page.on("pageerror", lambda exc: errors.append(str(exc)))
         page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
@@ -186,8 +270,17 @@ def main():
         page.wait_for_function("Boolean(window.tonsaiMetrics)", timeout=50000)
         startup = round(monotonic() - now, 2)
         page.screenshot(path=config.captures / "spawn.png")
-        performance = exercise(page, config.captures)
-        steering = sustained_touch(page, config.captures)
+        exercise(page, config.captures)
+        steering = {}
+        performance = {}
+        for name in ("A", "B"):
+            tap(page, "controller")
+            until(page, lambda m: m["controller"] == name, f"Could not switch to controller {name}")
+            steering[name] = sustained_touch(page, config.captures)
+            page.evaluate("window.tonsaiView('shore-start')")
+            until(page, lambda m: -54.2 < m["x"] < -53.8, "Could not reset performance viewpoint")
+            performance[name] = measure_quality(page)
+        multitouch = changed_touch_slots(page, config.captures)
         swim(page, config.captures)
         for view in ("coast", "camp", "shelter", "jungle", "well", "cave", "cave-interior", "fire"):
             page.evaluate("view => window.tonsaiView(view)", view)
@@ -211,6 +304,7 @@ def main():
             "six_animated_characters": performance,
             "conversation_and_two_thumb_controls": "passed",
             "held_forward_swipes_and_cancellation": steering,
+            "changed_touch_slot_corruption": multitouch,
             "walk_wade_swim_dive_surface_and_shore_return": "passed",
             "clear_cloudy_and_night_presets": "passed",
         }

@@ -16,6 +16,7 @@ if not re.fullmatch(r"[0-9a-f]{40}", args.source_commit):
 files = (
     "index.js", "index.audio.worklet.js", "index.audio.position.worklet.js",
     "index.icon.png", "index.apple-touch-icon.png", "index.png",
+    "third-party-notices.txt",
 )
 args.dist.mkdir(parents=True, exist_ok=True)
 for name in files:

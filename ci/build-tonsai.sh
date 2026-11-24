@@ -69,3 +69,4 @@ assert re.search(r"GODOT_THREADS_ENABLED\s*=\s*false", html)
 assert 'Tonsai' in html
 PY
 touch "$output/.nojekyll"
+cp controllers/third_party/PHANTOM_CAMERA_LICENSE.txt "$output/third-party-notices.txt"

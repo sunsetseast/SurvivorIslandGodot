@@ -2,6 +2,7 @@ extends SceneTree
 
 var camp: TonsaiCamp
 var failures := 0
+var _finger_positions: Dictionary[int, Vector2] = {}
 
 func _initialize() -> void:
     call_deferred("_test")
@@ -18,6 +19,8 @@ func _ticks(count: int) -> void:
 func _test() -> void:
     camp = load("res://tonsai/camp.tscn").instantiate()
     root.add_child(camp)
+    if camp.loaded:
+        camp.hud.select_controller(false)
     await _ticks(18)
     if not camp.loaded:
         printerr("FAIL: Tonsai did not load")
@@ -77,6 +80,8 @@ func _test() -> void:
     await _test_water()
     _test_props()
     await _test_movement_intent()
+    await _test_camera_comparison()
+    await _test_corrupted_touch()
     print("Tonsai result: ", camp.player.travel_distance, " m continuously walked; ",
         camp.simulation.arrivals, " NPC arrivals; ", failures, " failures")
     quit(int(failures > 0))
@@ -158,6 +163,12 @@ func _test_dive() -> void:
     _check(player.position.x >= TonsaiTerrain.OFFSHORE_EDGE, "Diver crossed the boundary")
     _check(player.position.y > camp.site.height(player.position.x, player.position.z),
         "Diver clipped into the seabed")
+    if player.controller_b:
+        var deep_y := player.position.y
+        player.pitch = .52
+        await _ticks(70)
+        _check(player.underwater() and player.position.y > deep_y + .35,
+            "Pitch-driven ascent did not preserve the underwater state")
     player.touch_direction = Vector2.ZERO
     player.toggle_dive()
     await _ticks(165)
@@ -170,10 +181,7 @@ func _test_touch() -> void:
     var touch := camp.hud.touch
     player.global_position = camp.site.ground(-51.0, -25.0) + Vector3.UP * .1
     var size := root.get_visible_rect().size
-    var window := DisplayServer.window_get_size()
-    var short_edge := minf(window.x, window.y)
-    if short_edge <= 1.0:
-        short_edge = minf(size.x, size.y)
+    var short_edge := minf(size.x, size.y)
     var left := touch.home()
     var right := size * Vector2(.67, .49)
     _press(1, left)
@@ -183,11 +191,11 @@ func _test_touch() -> void:
     var start_yaw := player.yaw
     var start_distance := player.travel_distance
     for i in 8:
-        _drag(2, size * (Vector2(.41, .5) if i % 2 == 0 else Vector2(.7, .5)),
-            Vector2(short_edge * .43, 0))
+        var point := size * (Vector2(.41, .5) if i % 2 == 0 else Vector2(.7, .5))
+        _drag(2, point, point - _finger_positions[2])
         await _ticks(8)
-        _check(absf(angle_difference(player.yaw, start_yaw - (i + 1) * .43
-            * CampThirdPerson.LOOK_RADIANS_PER_SHORT_EDGE)) < .003, "Orbit lost or repeated a swipe")
+        var expected_yaw := start_yaw - (point.x - right.x) / short_edge * CampThirdPerson.LOOK_RADIANS_PER_SHORT_EDGE
+        _check(absf(angle_difference(player.yaw, expected_yaw)) < .003, "Orbit lost or repeated a swipe")
         _check(touch.look_finger == 2 and touch.move_finger == 1, "Finger crossed the touch split")
     _check(player.travel_distance > start_distance + .65, "Forward hold stopped during orbit")
     _press(2, right, false)
@@ -199,7 +207,7 @@ func _test_touch() -> void:
     _press(1, left, false, true)
     _check(touch.move_finger == -1 and touch.look_finger == 3 and player.touch_direction == Vector2.ZERO,
         "Move cancellation affected the look owner")
-    _drag(3, right, Vector2(short_edge * .15, 0))
+    _swipe(3, Vector2(short_edge * .15, 0))
     touch.cancel()
     await _ticks(2)
     _check(touch.look_finger == -1 and player.yaw == held_yaw, "Cancellation left queued look")
@@ -208,6 +216,10 @@ func _test_touch() -> void:
     _check(absf(angle_difference(player.yaw, player.travel_heading + PI)) < .001, "Camera reset failed")
 
 func _press(index: int, where: Vector2, pressed := true, canceled := false) -> void:
+    if pressed and not canceled:
+        _finger_positions[index] = where
+    else:
+        _finger_positions.erase(index)
     var event := InputEventScreenTouch.new()
     event.index = index
     event.position = where
@@ -215,12 +227,158 @@ func _press(index: int, where: Vector2, pressed := true, canceled := false) -> v
     event.canceled = canceled
     root.push_input(event, true)
 
-func _drag(index: int, where: Vector2, screen_delta: Vector2) -> void:
+func _swipe(index: int, delta: Vector2) -> void:
+    _drag(index, _finger_positions[index] + delta, delta)
+
+func _drag(index: int, where: Vector2, reported_delta: Vector2) -> void:
+    if _finger_positions.has(index):
+        _finger_positions[index] = where
     var event := InputEventScreenDrag.new()
     event.index = index
     event.position = where
-    event.screen_relative = screen_delta
+    event.screen_relative = reported_delta
+    event.relative = reported_delta
     root.push_input(event, true)
+
+func _test_camera_comparison() -> void:
+    var player := camp.player
+    var touch := camp.hud.touch
+    var origin := Vector3(500, .05, 500)
+    var left := touch.home()
+    var right := root.get_visible_rect().size * Vector2(.69, .51)
+    var measured_steps: Array[float] = []
+    camp.hud.steering_button.pressed.emit() # Return to intent-preserving steering.
+    player.water = CampWaterSurface.new(0.0, func(_x: float, _z: float) -> float: return 0.0)
+    for use_b: bool in [false, true]:
+        camp.hud.select_controller(use_b)
+        player.position = origin
+        player.velocity = Vector3.ZERO
+        player.planar = Vector3.ZERO
+        player.yaw = 0.0
+        player.pitch = -.31
+        player.set_heading(PI)
+        player.sync_camera()
+        await _ticks(8)
+        _check(not player.camera_obstructed(), "An unobstructed camera reported a collision")
+        player.run_toggled = true
+        _press(1, left)
+        _drag(1, left + Vector2.UP * touch.radius, Vector2.ZERO)
+        await _ticks(36)
+        _press(2, right)
+        var size := root.get_visible_rect().size
+        var pixels := minf(size.x, size.y) / CampThirdPerson.LOOK_RADIANS_PER_SHORT_EDGE
+        var previous := player.camera.global_basis.get_euler()
+        var max_step := 0.0
+        var swept := 0.0
+        # Batched and alternating delivery, full clockwise orbit, and vertical input.
+        for frame in 56:
+            if frame in [0, 4, 5, 12, 16, 21]:
+                var step: float = [-1.2, .6, -1.68, -1.4, -1.4, -(TAU - 5.08)][[0, 4, 5, 12, 16, 21].find(frame)]
+                _swipe(2, Vector2(step * pixels, .35 * pixels if frame == 4 else 0.0))
+            await _ticks(1)
+            var angles := player.camera.global_basis.get_euler()
+            var separation := angle_difference(previous.y, angles.y)
+            swept += separation
+            max_step = maxf(max_step, absf(separation))
+            previous = angles
+            var actual := player.get_real_velocity() * Vector3(1, 0, 1)
+            _check(actual.normalized().dot(Vector3.FORWARD) > .995, "Camera comparison redirected held run")
+        _check(absf(swept - TAU) < .03 and previous.x < -.5,
+            "Camera comparison lost a full rotation or vertical drag")
+        measured_steps.append(max_step)
+        print("Camera ", "B" if use_b else "A", " maximum rendered step ", rad_to_deg(max_step), " deg")
+        _press(2, right, false)
+        _press(1, left, false)
+        await _ticks(6)
+    _check(measured_steps[1] < measured_steps[0] * .68, "B did not smooth batched camera updates")
+
+    # The exact same capsule and room geometry are used for both cameras.
+    var wall := StaticBody3D.new()
+    var collision := CollisionShape3D.new()
+    var box := BoxShape3D.new()
+    box.size = Vector3(6.0, 4.0, .25)
+    collision.shape = box
+    wall.add_child(collision)
+    wall.position = origin + Vector3(0, 1.0, 1.9)
+    camp.add_child(wall)
+    for use_b: bool in [false, true]:
+        camp.hud.select_controller(use_b)
+        player.position = origin
+        player.planar = Vector3.ZERO
+        player.yaw = 0.0
+        player.pitch = -.31
+        player.sync_camera()
+        await _ticks(12)
+        _check(player.camera_obstructed() and player.camera.global_position.z < wall.position.z - .15,
+            "Camera crossed a wall during comparison")
+    var shortened := player.camera.position.z
+    wall.queue_free()
+    await _ticks(5)
+    _check(player.camera.position.z < shortened + .5, "B snapped outward after clearing the wall")
+    await _ticks(55)
+    _check(player.camera.position.z > 4.1 and not player.camera_obstructed(), "B did not recover boom distance")
+    camp.hud.steering_button.pressed.emit()
+    _press(1, left)
+    _drag(1, left + Vector2.UP * touch.radius, Vector2.ZERO)
+    await _ticks(32)
+    var heading := player.travel_heading
+    var before := player.position
+    _press(2, right)
+    var edge := root.get_visible_rect().size.y
+    _swipe(2, Vector2(edge * .95, 0))
+    await _ticks(34)
+    _check(absf(angle_difference(heading, player.travel_heading)) < PI / 2 and player.position.z < before.z,
+        "B camera steering chased a fast glance")
+    _press(2, right, false)
+    var held := player.movement_intent.normalized()
+    await _ticks(15)
+    _check(player.movement_intent.normalized().dot(held) > .99, "B camera steering caught up after release")
+    _press(2, right)
+    var slow_turn_start := player.travel_heading
+    for frame in 30:
+        _swipe(2, Vector2(edge * .006, 0))
+        await _ticks(1)
+    _check(angle_difference(slow_turn_start, player.travel_heading) < -.22,
+        "B camera steering ignored a sustained slow orbit")
+    var switch_position := player.position
+    camp.hud.select_controller(false)
+    _check(player.position == switch_position and touch.move_finger == -1 and touch.look_finger == -1,
+        "Controller swap moved the player or kept old touches")
+    camp.hud.select_controller(true)
+    camp.hud.steering_button.pressed.emit()
+    player.run_toggled = false
+    player.planar = Vector3.ZERO
+    player.velocity = Vector3.ZERO
+    player.water = camp.terrain.water
+    await _test_water()
+    await _test_cave_orbit()
+
+func _test_cave_orbit() -> void:
+    var player := camp.player
+    var right := root.get_visible_rect().size * Vector2(.70, .51)
+    for use_b: bool in [false, true]:
+        camp.hud.select_controller(use_b)
+        player.position = camp.site.ground(11, 105) + Vector3.UP * .06
+        player.velocity = Vector3.ZERO
+        player.planar = Vector3.ZERO
+        player.yaw = 0.0
+        player.pitch = -.08
+        player.sync_camera()
+        await _ticks(10)
+        _press(2, right)
+        var size := root.get_visible_rect().size
+        var edge := minf(size.x, size.y)
+        var blocked := false
+        for step in 44:
+            _swipe(2, Vector2(edge * .054, 0))
+            await _ticks(2)
+            blocked = blocked or player.camera_obstructed()
+            var ray := PhysicsRayQueryParameters3D.create(player.pivot.global_position,
+                player.camera.global_position, 1)
+            _check(player.get_world_3d().direct_space_state.intersect_ray(ray).is_empty(),
+                "Cave orbit placed the camera behind geometry")
+        _check(blocked, "Cave orbit did not exercise an obstruction")
+        _press(2, right, false)
 
 func _test_movement_intent() -> void:
     var player := camp.player
@@ -238,10 +396,7 @@ func _test_movement_intent() -> void:
     var left := touch.home()
     var size := root.get_visible_rect().size
     var right := size * Vector2(.67, .49)
-    var window := DisplayServer.window_get_size()
-    var short_edge := minf(window.x, window.y)
-    if short_edge <= 1.0:
-        short_edge = minf(size.x, size.y)
+    var short_edge := minf(size.x, size.y)
     var pixels_per_radian := short_edge / CampThirdPerson.LOOK_RADIANS_PER_SHORT_EDGE
     var forward := Vector2.UP * touch.radius
     for depth in [0.0, .6, 6.0]:
@@ -271,8 +426,7 @@ func _test_movement_intent() -> void:
             _press(2, right)
             for i in 8:
                 var step := deg_to_rad(degrees) / 8.0
-                var across_split := Vector2(size.x * .4, right.y)
-                _drag(2, across_split if i % 2 == 0 else right, Vector2(-step * pixels_per_radian, 0))
+                _swipe(2, Vector2(-step * pixels_per_radian, 0))
                 await _ticks(2)
                 _check(touch.move_finger == 1 and touch.look_finger == 2, "Crossed look touch lost ownership")
                 max_intent_error = maxf(max_intent_error, player.movement_intent.distance_to(expected))
@@ -304,7 +458,7 @@ func _test_movement_intent() -> void:
     player.pitch = -.6
     var before_dive := player.position.y
     _press(2, right)
-    _drag(2, right, Vector2(-PI * pixels_per_radian, 0))
+    _swipe(2, Vector2(-PI * pixels_per_radian, 0))
     await _ticks(110)
     _check(player.underwater() and player.position.y < before_dive - 1.8
         and player.movement_intent.distance_to(expected) < .003
@@ -325,7 +479,7 @@ func _test_movement_intent() -> void:
         "Centering behind a deliberate turn replaced the gesture's camera reference")
     _press(2, right)
     var uncanceled_yaw := player.yaw
-    _drag(2, right, Vector2(pixels_per_radian, 0))
+    _swipe(2, Vector2(pixels_per_radian, 0))
     _press(2, right, false, true)
     await _ticks(2)
     _check(touch.move_finger == 1 and player.yaw == uncanceled_yaw, "Canceled look altered an active gesture")
@@ -384,11 +538,87 @@ func _test_movement_intent() -> void:
     _drag(1, left + forward, Vector2.ZERO)
     await _ticks(16)
     _press(2, right)
-    _drag(2, right, Vector2(-PI * .5 * pixels_per_radian, 0))
+    _swipe(2, Vector2(-PI * .5 * pixels_per_radian, 0))
     await _ticks(36)
     _check(player.movement_intent.dot(Vector3.LEFT) > .995 and player.get_real_velocity().x < -.8,
         "Optional camera-relative steering did not follow the orbit")
     touch.cancel()
+
+func _test_corrupted_touch() -> void:
+    var player := camp.player
+    var touch := camp.hud.touch
+    var size := root.get_visible_rect().size
+    var edge := minf(size.x, size.y)
+    var left := touch.home()
+    var right := size * Vector2(.66, .49)
+    var move_id := 1738566069
+    var look_id := 1738566071
+    var poison := Vector2(edge * 1.1, -edge * .7)
+    player.water = CampWaterSurface.new(0.0, func(_x: float, _z: float) -> float: return 0.0)
+    for use_b: bool in [false, true]:
+        for camera_steer: bool in [false, true]:
+            camp.hud.select_controller(use_b)
+            player.camera_relative_steering = camera_steer
+            player.position = Vector3(500, .05, 500)
+            player.planar = Vector3.ZERO
+            player.velocity = Vector3.ZERO
+            player.yaw = 0.0
+            player.pitch = -.31
+            player.set_heading(PI)
+            player.sync_camera()
+            await _ticks(8)
+            touch.trace.start(player)
+            _press(move_id, left)
+            _press(look_id, right)
+            _drag(move_id, left + Vector2.UP * touch.radius, poison)
+            await _ticks(30)
+            var from := player.position
+            for batch in 6:
+                if batch % 2 == 0:
+                    _drag(look_id, right, poison)
+                _drag(move_id, left + Vector2.UP * touch.radius * (.75 + .05 * batch), -poison)
+                if batch % 2 != 0:
+                    _drag(look_id, right, -poison)
+                await _ticks(2)
+            _press(move_id, left, false)
+            _drag(look_id, right, poison)
+            _press(move_id, left + Vector2.RIGHT * 12.0)
+            _drag(move_id, left + Vector2(12.0, -touch.radius), poison)
+            _drag(look_id, right, -poison)
+            await _ticks(8)
+            var actual := player.get_real_velocity()
+            var target := player.camera.global_basis.get_euler()
+            _check(absf(player.yaw) < .001 and absf(target.y) < .001 and absf(target.x + .31) < .002,
+                "Corrupted relative fields rotated a stationary camera finger")
+            _check(absf(angle_difference(player.travel_heading, PI)) < .01 and actual.z < -.80
+                and absf(actual.x) < .01 and absf(player.position.x - from.x) < .02,
+                "Corrupted relative fields changed heading or forward trajectory")
+            # Independent look release, then a new gesture starts at a different point.
+            _press(look_id, right, false)
+            _drag(look_id, right - poison, poison)
+            var next := right + Vector2(edge * .11, 0)
+            _press(look_id, next)
+            _drag(look_id, next, poison)
+            await _ticks(5)
+            _check(absf(player.yaw) < .001 and touch.move_finger == move_id and touch.look_finger == look_id,
+                "A released touch or a new press reused stale look history")
+            _drag(look_id, next + Vector2(edge * .06, 0), -poison)
+            await _ticks(35)
+            _check(absf(player.yaw + CampThirdPerson.LOOK_RADIANS_PER_SHORT_EDGE * .06) < .002,
+                "Look motion did not match the finger's absolute displacement")
+            var saved := player.yaw
+            _swipe(look_id, Vector2(edge * .1, 0))
+            touch._resize()
+            _drag(look_id, next, poison)
+            await _ticks(8)
+            _check(absf(player.yaw - saved) < .003 and touch.move_finger == -1 and touch.look_finger == -1,
+                "Viewport change left stale touch history or pending look")
+            var report: Dictionary = JSON.parse_string(touch.trace.finish())
+            var events: Array = report["events"]
+            _check(events.any(func(row: Array) -> bool:
+                return row[2] == "drag" and row[3] == look_id and absf(row[7]) > edge and row[11] == 0.0)
+                and not report["frames"].is_empty(), "Diagnostic trace did not capture the corrupted event and camera frames")
+    print("All four controller / steering combinations rejected corrupted touch deltas")
 
 func _test_props() -> void:
     _check(is_instance_valid(camp.props.well_lid) and is_instance_valid(camp.props.well_scoop),

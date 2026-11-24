@@ -32,8 +32,13 @@ var _bridge: JavaScriptObject
 var _capture_callback: JavaScriptObject
 var _web_visibility_callback: JavaScriptObject
 var _started := Time.get_ticks_msec()
+var _tracing := false
+var _trace: Array = []
 
 func _ready() -> void:
+    # Only the B player opts in. The camp, NPCs and baseline keep their timing.
+    get_tree().physics_interpolation = true
+    physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
     if not site.load_inputs():
         push_error("Tonsai inputs missing. Run bash ci/build-tonsai.sh.")
         return
@@ -91,6 +96,8 @@ func _spawn_cast() -> void:
     player.water_motion = load("res://world/assets/surface-swimming.res") as AnimationLibrary
     player.position = site.point(site.layout.spawn) + Vector3.UP * .13
     add_child(player)
+    player.process_priority = -1
+    player.select_controller(true)
     var entries := [
         [&"cirie", -7.4, -25.9, &"fire", 4.8],
         [&"yul", 0.2, -30.0, &"shelter", 1.3],
@@ -170,15 +177,28 @@ func _physics_process(delta: float) -> void:
 func _process(delta: float) -> void:
     if not loaded:
         return
+    hud.touch.trace.frame(player)
+    if _tracing and _trace.size() < 1200:
+        var angles := player.camera.global_basis.get_euler()
+        var velocity := player.get_real_velocity()
+        var point := player.position
+        var view := player.camera.global_position
+        _trace.append([delta, player.yaw, player.pitch, angles.y, angles.x,
+            point.x, point.y, point.z, velocity.x, velocity.z, player.travel_heading,
+            player.camera.position.z, player.camera_obstructed(), player.raw_look.x,
+            player.raw_look.y, view.x, view.y, view.z, hud.touch.move_finger,
+            hud.touch.look_finger, player.movement_intent.x, player.movement_intent.z, Time.get_ticks_usec()])
     _metrics_tick += delta
     if _metrics_tick < .35:
         return
     _metrics_tick = 0.0
     hud.refresh()
+    hud.refresh_diagnostics(delta)
     var fps := Engine.get_frames_per_second()
     var draws := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME)
     var primitives := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME)
-    hud.stats.text = "%d FPS   %d draws   %dk tris   6 rigs" % [fps, draws, primitives / 1000]
+    hud.stats.text = "%s   %d FPS   %d draws   %dk tris   6 rigs" % [
+        CampTouch.TouchTrace.BUILD, fps, draws, primitives / 1000]
     for npc in inhabitants:
         # Distant actors keep their physical schedules. Only skeletal
         # evaluation sleeps when nobody can read the pose.
@@ -187,12 +207,16 @@ func _process(delta: float) -> void:
     if _review:
         var actual := player.get_real_velocity()
         _bridge.tonsaiMetrics = JSON.stringify({
+            "build": CampTouch.TouchTrace.BUILD,
             "fps": fps, "draws": draws, "primitives": primitives, "actors": inhabitants.size() + 1,
             "x": player.position.x, "y": player.position.y, "z": player.position.z, "yaw": player.yaw,
             "travel": player.travel_distance, "arrivals": simulation.arrivals,
             "clip": player.motion_clip, "pose": player.presentation.playback.get_current_node(),
             "locomotion": CampHumanoidMotor.Locomotion.keys()[player.locomotion],
             "heading": player.travel_heading, "camera_y": player.camera.global_position.y,
+            "controller": "B" if player.controller_b else "A",
+            "economy": economical,
+            "view_yaw": player.rendered_yaw(), "view_pitch": player.camera.global_basis.get_euler().x,
             "velocity_x": actual.x, "velocity_z": actual.z,
             "intent_x": player.movement_intent.x, "intent_z": player.movement_intent.z,
             "move_finger": hud.touch.move_finger, "look_finger": hud.touch.look_finger,
@@ -207,6 +231,14 @@ func _capture(values: Array) -> void:
     if values.is_empty():
         return
     var view := String(values[0])
+    if view == "trace-start":
+        _trace.clear()
+        _tracing = true
+        return
+    if view == "trace-stop":
+        _tracing = false
+        _bridge.tonsaiTrace = JSON.stringify(_trace)
+        return
     if view == "shore-start":
         hud.touch.cancel()
         player.planar = Vector3.ZERO
@@ -214,6 +246,7 @@ func _capture(values: Array) -> void:
         player.position = site.ground(-54.0, -27.0) + Vector3.UP * .12
         player.yaw = PI * .5
         player.pitch = -.17
+        player.sync_camera()
         player.camera.current = true
         return
     if view == "follow":
