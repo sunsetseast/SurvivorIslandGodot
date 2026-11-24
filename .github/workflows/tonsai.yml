@@ -1,0 +1,53 @@
+name: Godot Tonsai Camp
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tonsai-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tonsai:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/bin/godot-4.7.2
+            ~/.local/share/godot/export_templates/4.7.2.stable/web_nothreads_release.zip
+          key: godot-4.7.2-stable-linux-x86_64-web-nothreads
+      - run: bash ci/install-godot-web.sh
+      - name: Phase 0 regression
+        run: bash ci/build-web.sh
+      - name: Character lab regression
+        run: bash ci/build-character-lab.sh
+      - name: Assemble, bake and test Tonsai
+        run: bash ci/build-tonsai.sh
+      - name: Install Chromium headless shell
+        run: |
+          python3 -m pip install playwright==1.62.0
+          python3 -m playwright install chromium --only-shell
+      - name: Exercise Web build
+        run: python3 tools/tonsai/review_web.py build/tonsai build/tonsai-captures
+      - uses: actions/upload-artifact@v4
+        with:
+          name: survivor-island-tonsai-web
+          path: build/tonsai/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: survivor-island-tonsai-captures
+          path: build/tonsai-captures/
+          if-no-files-found: ignore
+          retention-days: 14
