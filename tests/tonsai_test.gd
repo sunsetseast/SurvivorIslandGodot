@@ -251,6 +251,7 @@ func _test_camera_comparison() -> void:
         player.set_heading(PI)
         player.sync_camera()
         await _ticks(8)
+        _check(not player.camera_obstructed(), "An unobstructed camera reported a collision")
         player.run_toggled = true
         _press(1, left)
         _drag(1, left + Vector2.UP * touch.radius, Vector2.ZERO)

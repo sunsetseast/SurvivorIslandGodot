@@ -39,6 +39,7 @@ var _stick_follows_camera := false
 var _pending_look := Vector2.ZERO
 var _reset_requested := false
 var _camera_distance := CAMERA_DISTANCE
+var _camera_blocked := false
 var _camera_probe := PhysicsShapeQueryParameters3D.new()
 var _mobile_orbit: MobileOrbit
 var _previous_rendered_yaw := 0.0
@@ -158,7 +159,7 @@ func rendered_yaw() -> float:
     return _mobile_orbit.rendered_yaw if controller_b else yaw
 
 func camera_obstructed() -> bool:
-    return _mobile_orbit.obstructed if controller_b else _camera_distance < CAMERA_DISTANCE - .01
+    return _mobile_orbit.obstructed if controller_b else _camera_blocked
 
 func select_controller(use_b: bool) -> void:
     if controller_b == use_b:
@@ -208,6 +209,7 @@ func _update_camera(delta: float) -> void:
     _camera_probe.motion = pivot.global_basis.z * CAMERA_DISTANCE
     var fractions := get_world_3d().direct_space_state.cast_motion(_camera_probe)
     var limit := CAMERA_DISTANCE
+    _camera_blocked = not fractions.is_empty() and fractions[0] < 1.0
     if not fractions.is_empty():
         limit = maxf(.06, fractions[0] * CAMERA_DISTANCE - .075)
     var target := limit - .16 if limit < CAMERA_DISTANCE else limit

@@ -190,6 +190,7 @@ def main():
             "--no-sandbox", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
         ])
         page = browser.new_page(viewport={"width": 956, "height": 440}, has_touch=True)
+        page.set_default_timeout(60000)
         errors = []
         page.on("pageerror", lambda exc: errors.append(str(exc)))
         page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
