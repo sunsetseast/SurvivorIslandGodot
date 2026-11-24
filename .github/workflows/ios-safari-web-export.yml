@@ -1,4 +1,4 @@
-name: Godot Web Export — iPhone Safari Feasibility
+name: Godot Web Preview — Tonsai Beach
 
 on:
   push:
@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   build-web:
-    name: Smoke test and export
+    name: Build browser preview
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -28,7 +28,7 @@ jobs:
           key: godot-4.7.2-stable-linux-x86_64-web-nothreads
       - name: Install Godot 4.7.2 and matching Web template
         run: bash ci/install-godot-web.sh
-      - name: Import, smoke-test and export
+      - name: Smoke-test and export Phase 0
         run: bash ci/build-web.sh
       - name: Upload playable build files
         uses: actions/upload-artifact@v4
@@ -39,11 +39,36 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Set up Node for Tonsai asset preparation
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Validate and export Tonsai and the character lab
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          bash ci/build-character-lab.sh
+          bash ci/build-tonsai.sh
+
+      - name: Assemble the Pages preview
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          mkdir -p build/pages/phase0 build/pages/character-lab
+          cp -a build/tonsai/. build/pages/
+          cp -a build/web/. build/pages/phase0/
+          cp -a build/character-lab/. build/pages/character-lab/
+          for directory in build/pages build/pages/phase0 build/pages/character-lab; do
+            for file in index.html index.js index.wasm index.pck; do
+              test -s "$directory/$file"
+            done
+          done
+
       - name: Upload GitHub Pages artifact
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v4
         with:
-          path: build/web/
+          path: build/pages/
 
   deploy-pages:
     name: Publish GitHub Pages preview
