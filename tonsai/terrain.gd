@@ -2,42 +2,47 @@ class_name TonsaiTerrain
 extends Node3D
 
 const GROUND := preload("res://tonsai/shaders/ground.gdshader")
-const WATER := preload("res://tonsai/shaders/water.gdshader")
-const SKY := preload("res://tonsai/shaders/sky.gdshader")
+const WATER := preload("res://world/water.gdshader")
+const SEA_LEVEL := 0.03
+const OFFSHORE_EDGE := -83.0
 const TILE := 32
 var site: TonsaiSiteData
 var sun: DirectionalLight3D
+var water: CampWaterSurface
 
 func build(data: TonsaiSiteData) -> void:
     site = data
+    water = CampWaterSurface.new(SEA_LEVEL, site.height)
     _lighting()
     _land()
     _sea()
     _boundaries()
 
 func _lighting() -> void:
-    var sky_mat := ShaderMaterial.new()
-    sky_mat.shader = SKY
-    sky_mat.set_shader_parameter("clouds", load(TonsaiSiteData.DIR + "tropical-clouds.png"))
+    var sky_mat := PanoramaSkyMaterial.new()
+    sky_mat.panorama = load("res://world/assets/sunflowers-sky.jpg")
     var sky := Sky.new()
     sky.sky_material = sky_mat
+    sky.radiance_size = Sky.RADIANCE_SIZE_64
+    sky.process_mode = Sky.PROCESS_MODE_QUALITY
     var world := WorldEnvironment.new()
     world.environment = Environment.new()
     var env := world.environment
     env.background_mode = Environment.BG_SKY
     env.sky = sky
+    env.sky_rotation.y = deg_to_rad(78)
     env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-    env.ambient_light_color = Color("#bbd7e7")
-    env.ambient_light_energy = 0.59
-    env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+    env.ambient_light_color = Color("#cad5df")
+    env.ambient_light_energy = 0.47
     env.fog_enabled = true
-    env.fog_light_color = Color("#b4cfcc")
-    env.fog_density = 0.003
+    env.fog_light_color = Color("#a8bfc4")
+    env.fog_density = 0.0022
+    env.fog_sky_affect = .10
     add_child(world)
     sun = DirectionalLight3D.new()
     sun.rotation_degrees = Vector3(-37, -116, 0)
-    sun.light_energy = 1.02
-    sun.light_color = Color("#fff0cc")
+    sun.light_energy = .84
+    sun.light_color = Color("#fff0da")
     sun.shadow_enabled = true
     sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
     sun.directional_shadow_max_distance = 37
@@ -93,16 +98,14 @@ func _tile(x0: int, z0: int, x1: int, z1: int) -> ArrayMesh:
     return mesh
 
 func _sea() -> void:
-    var shores := PackedFloat32Array(site.layout.shore)
-    var coast := Image.create_from_data(shores.size(), 1, false, Image.FORMAT_RF, shores.to_byte_array())
     var mat := ShaderMaterial.new()
     mat.shader = WATER
-    mat.set_shader_parameter("coast", ImageTexture.create_from_image(coast))
+    mat.set_shader_parameter("ripples", load("res://world/assets/water-ripple.png"))
     var ocean := MeshInstance3D.new()
     var plane := PlaneMesh.new()
     plane.size = Vector2(565, 740)
     ocean.mesh = plane
-    ocean.position = Vector3(-234, 0.03, 18)
+    ocean.position = Vector3(-234, water.level, 18)
     ocean.material_override = mat
     ocean.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
     ocean.name = "AndamanSea"
@@ -111,13 +114,12 @@ func _sea() -> void:
 func _boundaries() -> void:
     var polygon: Array = site.layout.territory
     for i in polygon.size():
-        _wall(Vector2(polygon[i].x, polygon[i].z), Vector2(polygon[(i + 1) % polygon.size()].x,
-            polygon[(i + 1) % polygon.size()].z), "TerritoryEdge")
-    var shores: Array = site.layout.shore
-    for i in range(0, shores.size() - 1, 3):
-        var j := mini(i + 3, shores.size() - 1)
-        _wall(Vector2(float(shores[i]) - 0.55, site.origin.y + i),
-            Vector2(float(shores[j]) - 0.55, site.origin.y + j), "Shallows")
+        var a: Dictionary = polygon[i]
+        var b: Dictionary = polygon[(i + 1) % polygon.size()]
+        var edge_a := Vector2(OFFSHORE_EDGE if a.x == -70 else float(a.x), a.z)
+        var edge_b := Vector2(OFFSHORE_EDGE if b.x == -70 else float(b.x), b.z)
+        var label := "OffshoreLimit" if edge_a.x == edge_b.x and edge_a.x == OFFSHORE_EDGE else "TerritoryEdge"
+        _wall(edge_a, edge_b, label)
 
 func _wall(a: Vector2, b: Vector2, label: String) -> void:
     var edge := b - a

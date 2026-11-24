@@ -5,6 +5,18 @@ const ACTOR := preload("res://character_lab/actor.gd")
 const RADIUS := 0.36
 const WALK_SPEED := 1.96
 const RUN_SPEED := 4.52
+enum Locomotion { LAND, WADE, SWIM, TREAD }
+
+const WADE_ENTER := .22
+const WADE_EXIT := .14
+const SWIM_ENTER := 1.24
+const SWIM_EXIT := 1.02
+const FLOAT_OFFSET := 1.07
+const SWIM_SPEED := 2.12
+
+var water: CampWaterSurface
+var water_motion: AnimationLibrary
+var locomotion := Locomotion.LAND
 var presentation: Node3D
 var travel_heading := 0.0
 var planar := Vector3.ZERO
@@ -27,6 +39,7 @@ func _ready() -> void:
     safe_margin = .022
     presentation = ACTOR.new()
     presentation.name = "HumanoidVisual"
+    presentation.water_motion = water_motion
     add_child(presentation)
     set_heading(rotation.y)
     rotation.y = 0.0
@@ -35,27 +48,70 @@ func set_heading(heading: float) -> void:
     travel_heading = heading
     presentation.rotation.y = heading
 
-func face_point(point: Vector3, delta: float) -> void:
+func face_point(point: Vector3, delta: float, turn_rate := 9.0) -> void:
     var heading := point - global_position
     if Vector2(heading.x, heading.z).length_squared() > .001:
-        travel_heading = rotate_toward(travel_heading, atan2(heading.x, heading.z), 9.0 * delta)
+        travel_heading = rotate_toward(travel_heading, atan2(heading.x, heading.z), turn_rate * delta)
         presentation.rotation.y = travel_heading
 
 func walk_direction(desired: Vector3, running: bool, delta: float, animate := true) -> void:
+    _update_water_state(desired)
     var speed := RUN_SPEED if running else WALK_SPEED
-    planar = planar.move_toward(desired.limit_length() * speed, delta * (13.0 if desired.is_zero_approx() else 8.5))
-    if planar.length_squared() > .022:
-        face_point(global_position + planar, delta)
+    var acceleration := 8.5
+    var braking := 13.0
+    if swimming():
+        speed = SWIM_SPEED
+        acceleration = 4.5
+        braking = 6.2
+    elif locomotion == Locomotion.WADE:
+        var drag := smoothstep(WADE_EXIT, SWIM_ENTER, water.depth_at(global_position))
+        speed *= lerpf(.89, .39, drag)
+    var input := desired.limit_length()
+    var reversing := planar.dot(input) < 0.0
+    if input.length_squared() > .012:
+        face_point(global_position + input, delta, 10.0 if swimming() else 16.0)
+    planar = planar.move_toward(input * speed, delta * (braking if reversing or input.is_zero_approx() else acceleration))
     velocity.x = planar.x
     velocity.z = planar.z
-    velocity.y = -.12 if is_on_floor() else maxf(velocity.y - 15.0 * delta, -25.0)
-    if is_on_floor() and is_on_wall() and planar.length_squared() > .09:
-        _try_step(planar * delta)
+    if swimming():
+        # Keep the capsule on the same collision layers as on land. A gradual
+        # approach to sloping ground can lift the body via normal slide contacts.
+        var target := water.level - FLOAT_OFFSET
+        velocity.y = move_toward(velocity.y, clampf((target - global_position.y) * 7.0, -3.2, 3.2), delta * 22.0)
+    else:
+        velocity.y = -.12 if is_on_floor() else maxf(velocity.y - 15.0 * delta, -25.0)
+        if is_on_floor() and is_on_wall() and planar.length_squared() > .09:
+            _try_step(planar * delta)
     move_and_slide()
     if animate:
         var actual := get_real_velocity()
         var magnitude := Vector2(actual.x, actual.z).length()
-        set_motion(&"Idle" if magnitude < .16 else (&"Jog" if running and magnitude > 2.55 else &"Walk"))
+        if swimming():
+            set_motion(&"Swim" if locomotion == Locomotion.SWIM else &"Tread")
+        else:
+            set_motion(&"Idle" if magnitude < .16 else (&"Jog" if running and magnitude > 2.55 else &"Walk"))
+        presentation.match_speed(motion_clip, magnitude)
+
+func swimming() -> bool:
+    return locomotion == Locomotion.SWIM or locomotion == Locomotion.TREAD
+
+func _update_water_state(desired: Vector3) -> void:
+    if water == null:
+        return
+    var depth := water.depth_at(global_position)
+    var near_water := global_position.y <= water.level + .12
+    var was_swimming := swimming()
+    if near_water and depth >= (SWIM_EXIT if was_swimming else SWIM_ENTER):
+        # A small speed deadband lets a released stroke finish into the tread.
+        var stroking := desired.length_squared() > .018 or planar.length_squared() > .09
+        locomotion = Locomotion.SWIM if stroking else Locomotion.TREAD
+    elif near_water and depth > (WADE_ENTER if locomotion == Locomotion.LAND else WADE_EXIT):
+        locomotion = Locomotion.WADE
+    else:
+        locomotion = Locomotion.LAND
+    floor_snap_length = 0.0 if swimming() else .30
+    if was_swimming and not swimming():
+        velocity.y = minf(velocity.y, 0.0)
 
 func set_motion(clip: StringName) -> void:
     if motion_clip != clip:

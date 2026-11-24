@@ -44,6 +44,14 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
+      - name: Package separate static preview
+        run: python3 tools/tonsai/package_preview.py build/tonsai build/tonsai-preview "$GITHUB_SHA"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: survivor-island-tonsai-static-preview
+          path: build/tonsai-preview/
+          if-no-files-found: error
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         if: always()
         with:

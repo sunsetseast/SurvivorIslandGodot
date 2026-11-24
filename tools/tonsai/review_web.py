@@ -75,17 +75,35 @@ def exercise(page, captures):
     }
 
 
+def swim(page, captures):
+    page.evaluate("window.tonsaiView('shore-start')")
+    until(page, lambda m: -54.2 < m["x"] < -53.8, "Shore setup failed")
+    page.keyboard.down("w")
+    until(page, lambda m: m["locomotion"] == "WADE", "Wading state missing")
+    until(page, lambda m: m["pose"] == "Swim" and m["x"] < -67.0, "Stroke state missing", timeout=45)
+    page.screenshot(path=captures / "swimming.png")
+    page.keyboard.up("w")
+    until(page, lambda m: m["pose"] == "Tread", "Treading state missing")
+    page.screenshot(path=captures / "treading.png")
+    page.keyboard.down("s")
+    until(page, lambda m: m["locomotion"] == "WADE", "Shore return did not wade", timeout=45)
+    until(page, lambda m: m["locomotion"] == "LAND", "Shore return did not walk")
+    page.keyboard.up("s")
+
+
 def main():
     args = argparse.ArgumentParser()
     args.add_argument("build", type=Path)
     args.add_argument("captures", type=Path)
     args.add_argument("--chromium")
+    args.add_argument("--url", help="Exercise a published copy of the same build")
     config = args.parse_args()
     config.captures.mkdir(parents=True, exist_ok=True)
     handler = partial(SimpleHTTPRequestHandler, directory=config.build.resolve())
     with ThreadingHTTPServer(("127.0.0.1", 0), handler) as server, sync_playwright() as playwright:
         Thread(target=server.serve_forever, daemon=True).start()
-        url = f"http://127.0.0.1:{server.server_port}/?review"
+        root_url = config.url or f"http://127.0.0.1:{server.server_port}/"
+        url = root_url + "?review"
         browser = playwright.chromium.launch(executable_path=config.chromium, args=[
             "--no-sandbox", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
         ])
@@ -99,7 +117,8 @@ def main():
         startup = round(monotonic() - now, 2)
         page.screenshot(path=config.captures / "spawn.png")
         performance = exercise(page, config.captures)
-        for view in ("coast", "camp", "shelter", "jungle", "spring", "cave", "cave-interior"):
+        swim(page, config.captures)
+        for view in ("coast", "camp", "shelter", "jungle", "well", "cave", "cave-interior"):
             page.evaluate("view => window.tonsaiView(view)", view)
             page.wait_for_timeout(500)
             page.screenshot(path=config.captures / f"{view}.png")
@@ -110,6 +129,7 @@ def main():
             "startup_s": startup,
             "six_animated_characters": performance,
             "conversation_and_two_thumb_controls": "passed",
+            "walk_wade_swim_tread_and_shore_return": "passed",
         }
         (config.captures / "browser-metrics.json").write_text(json.dumps(report, indent=2) + "\n")
         print(json.dumps(report, indent=2))

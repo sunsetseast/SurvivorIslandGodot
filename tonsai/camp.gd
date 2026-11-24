@@ -7,7 +7,7 @@ const CAPTURE_VIEWS := {
     "camp": [Vector3(-13, 4.1, -24), Vector3(1, 2.15, -36)],
     "shelter": [Vector3(12.0, 3.05, -28.8), Vector3(12.0, 3.0, -44.0)],
     "jungle": [Vector3(14, 2.5, -29), Vector3(26, 2.0, -10)],
-    "spring": [Vector3(102.0, 12.3, 32.5), Vector3(108.7, 9.7, 36.4)],
+    "well": [Vector3(104.1, 11.30, 33.1), Vector3(108, 10.69, 36)],
     "cave": [Vector3(4.5, 4.5, 89), Vector3(8, 8.0, 106)],
     "cave-interior": [Vector3(11, 3.4, 100), Vector3(11, 4.2, 109)],
 }
@@ -80,11 +80,13 @@ func _spawn_cast() -> void:
     destinations[&"fire"] = site.ground(-9.6, -33.45)
     destinations[&"shelter"] = Vector3(12.9, site.layout.shelter.deck.y, -43.3)
     destinations[&"shore"] = site.ground(-45.2, -25.3)
-    destinations[&"spring"] = site.ground(104.2, 35.9)
+    destinations[&"spring"] = site.well_anchor(&"conversation")
     destinations[&"trail"] = site.ground(36.0, 4.0)
     destinations[&"work"] = site.ground(2.0, -39.6)
     player = CampThirdPerson.new()
     player.name = "Explorer"
+    player.water = terrain.water
+    player.water_motion = load("res://world/assets/surface-swimming.res") as AnimationLibrary
     player.position = site.point(site.layout.spawn) + Vector3.UP * .13
     add_child(player)
     var entries := [
@@ -108,6 +110,8 @@ func _spawn_cast() -> void:
         inhabitants.append(npc)
 
 func nearby() -> TonsaiNpc:
+    if player.swimming():
+        return null
     var closest: TonsaiNpc
     var distance := REACH
     for candidate in inhabitants:
@@ -181,7 +185,9 @@ func _process(delta: float) -> void:
         _bridge.tonsaiMetrics = JSON.stringify({
             "fps": fps, "draws": draws, "primitives": primitives, "actors": inhabitants.size() + 1,
             "x": player.position.x, "y": player.position.y, "z": player.position.z, "yaw": player.yaw,
-            "travel": player.travel_distance, "arrivals": simulation.arrivals, "clip": player.motion_clip,
+            "travel": player.travel_distance, "arrivals": simulation.arrivals,
+            "clip": player.motion_clip, "pose": player.presentation.playback.get_current_node(),
+            "locomotion": CampHumanoidMotor.Locomotion.keys()[player.locomotion],
             "startup_ms": Time.get_ticks_msec() - _started if not bool(_bridge.tonsaiMetrics) else 0,
             "nearby": str(hud.nearby_actor),
             "dialogue": str(partner.contestant) if is_instance_valid(partner) else "",
@@ -192,6 +198,15 @@ func _capture(values: Array) -> void:
     if values.is_empty():
         return
     var view := String(values[0])
+    if view == "shore-start":
+        hud.touch.cancel()
+        player.planar = Vector3.ZERO
+        player.velocity = Vector3.ZERO
+        player.position = site.ground(-54.0, -27.0) + Vector3.UP * .12
+        player.yaw = PI * .5
+        player.pitch = -.17
+        player.camera.current = true
+        return
     if view == "follow":
         player.camera.current = true
         return

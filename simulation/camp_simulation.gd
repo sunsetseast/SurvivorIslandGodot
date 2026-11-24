@@ -11,7 +11,7 @@ const ACTIVITIES := {
     &"fire": {"label": "Tending the fire", "pose": &"Idle"},
     &"shelter": {"label": "Resting at the shelter", "pose": &"Seated"},
     &"shore": {"label": "Taking a moment on the beach", "pose": &"Idle"},
-    &"spring": {"label": "Checking the freshwater spring", "pose": &"Idle"},
+    &"spring": {"label": "Visiting the water well", "pose": &"Idle"},
     &"trail": {"label": "Walking the freshwater trail", "pose": &"Idle"},
     &"work": {"label": "Working at the camp rack", "pose": &"Idle"},
 }

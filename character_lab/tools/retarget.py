@@ -24,7 +24,7 @@ LIMBS = {
 }
 
 
-def bake(armature, source_path):
+def bake(armature, source_path, clips=CLIPS):
     scene = bpy.context.scene
     scene.render.fps = 30
     previous = set(bpy.data.objects)
@@ -60,10 +60,12 @@ def bake(armature, source_path):
         correction[name] = source_bone.matrix_local.to_3x3().inverted() @ alignment @ bone.matrix_local.to_3x3()
 
     armature.animation_data_create()
+    for track in list(armature.animation_data.nla_tracks):
+        armature.animation_data.nla_tracks.remove(track)
     for track in list(donor.animation_data.nla_tracks):
         donor.animation_data.nla_tracks.remove(track)
 
-    for name, source in CLIPS.items():
+    for name, source in clips.items():
         donor_action = bpy.data.actions[source + "_Rig"]
         donor.animation_data.action = donor_action
         action = bpy.data.actions.new(name)
@@ -122,6 +124,6 @@ def bake(armature, source_path):
     for obj in imported:
         bpy.data.objects.remove(obj, do_unlink=True)
     for action in list(bpy.data.actions):
-        if action.name not in CLIPS:
+        if action.name not in clips:
             bpy.data.actions.remove(action)
     scene.frame_set(0)

@@ -42,6 +42,9 @@ func ground(x: float, z: float) -> Vector3:
 func point(record: Dictionary) -> Vector3:
     return ground(float(record.x), float(record.z))
 
+func well_anchor(use: StringName) -> Vector3:
+    return point(layout.wellAnchors[String(use)])
+
 func deck_faces() -> PackedVector3Array:
     var deck: Dictionary = layout.shelter.deck
     return quad(Vector3(deck.x0, deck.y, deck.z0), Vector3(deck.x1, deck.y, deck.z0),
@@ -104,7 +107,7 @@ static func footprint(item: Dictionary) -> PackedVector3Array:
         var z: float = item.z
         var a: float = item.hx
         var b: float = item.hz
-        if item.kind in ["tree", "palm", "rock"]:
+        if item.kind in ["tree", "palm", "rock", "well"]:
             for i in 8:
                 var angle := TAU * i / 8.0
                 polygon.append(Vector3(x + cos(angle) * a, 0.0, z + sin(angle) * b))
@@ -118,4 +121,6 @@ static func obstacle_height(kind: String) -> float:
         return 4.6
     if kind.begins_with("root:"):
         return 0.55
-    return 0.55 if kind in ["log", "fire", "spring-pool", "driftwood"] else 1.2
+    if kind == "well":
+        return 2.6
+    return 0.55 if kind in ["log", "fire", "driftwood"] else 1.2
