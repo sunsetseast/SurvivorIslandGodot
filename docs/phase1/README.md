@@ -6,7 +6,7 @@
 
 The **Godot Character Lab** workflow builds a single-threaded Web export and creates the `survivor-island-character-lab-web` artifact. The capture job uses Chromium software WebGL and publishes the images and raw metrics. The Phase 0 entry point and main-branch Pages workflow still target the feasibility beach. GitHub permits one Pages site per repository, so the draft uses a separate artifact. [GitHub Pages site limits](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages#types-of-github-pages-sites)
 
-On a computer with Python, extract the Web artifact and run `python3 -m http.server 8000 --bind 0.0.0.0` from its directory. On an iPhone connected to the same network, open that computer’s LAN address with port 8000 in Safari. Disable portrait orientation lock and rotate sideways. **This draft has no hosted lab URL.** The Web ZIP is a set of website files and requires an HTTP host.
+Extract the Web artifact and serve its contents over HTTPS for Safari testing. Godot 4.7.2 requires a secure context for this export even with threads disabled. A desktop-only smoke test can use `python3 -m http.server 8000` from the extracted directory and open `http://localhost:8000/` on that same computer. **This draft has no hosted lab URL.** When the files are available on an HTTPS host, open that URL on the iPhone, disable portrait orientation lock, and rotate sideways. [Godot 4.7.2 secure-context behavior](https://github.com/godotengine/godot/issues/124636)
 
 1. Open **Face** and cycle **Rotate** through the front, three-quarter, profile, and rear. Compare **Smile** and **Warm light**.
 2. In **Body**, test **Walk**, **Jog**, **Talk**, **Sit**, then **Stand**. Check foot contact, hands, and the shirt at the shoulder bend.
