@@ -59,3 +59,5 @@ The Tonsai workflow uploads `survivor-island-tonsai-web` rather than deploying. 
 ![Godot gameplay frames](Tonsai-gameplay.jpg)
 
 Headless Godot completed approximately 387 m of continuous physical traversal through the shelter ramp and deck, camp trail, beach, freshwater spring, quiet alcove and cave. The route isolates physical terrain from temporary NPC congestion. Separate tests cover participant-only memory, NPC interruption and resumption, cave wall collision, and the camera pitch limits. Standalone Chromium testing covers six rigs, a touch-initiated conversation, simultaneous movement and camera orbit, and movement cancellation on release.
+
+The validated Web export contains 20,876,592 bytes of game data and 39,514,754 bytes of WebAssembly before transfer compression. Linux Chromium 149 with SwiftShader software WebGL 2 reported a 9.11 s loopback startup at 956 × 440 CSS pixels. With six rigs, the sampled medians were 123 draws and 91,091 submitted primitives at Full quality, and 53 draws and 33,073 primitives in Economy. Software rendering reported 7 and 5 FPS respectively in that short sample. Phone performance needs a real-device run.

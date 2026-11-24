@@ -3,8 +3,9 @@ extends Node3D
 
 const REACH := 2.65
 const CAPTURE_VIEWS := {
-    "coast": [Vector3(-42, 5.4, -51), Vector3(-48, 1.4, 18)],
+    "coast": [Vector3(-41, 3.25, 57), Vector3(-27, 11.0, 97)],
     "camp": [Vector3(-13, 4.1, -24), Vector3(1, 2.15, -36)],
+    "shelter": [Vector3(12.0, 3.05, -28.8), Vector3(12.0, 3.0, -44.0)],
     "jungle": [Vector3(14, 2.5, -29), Vector3(26, 2.0, -10)],
     "spring": [Vector3(102.0, 12.3, 32.5), Vector3(108.7, 9.7, 36.4)],
     "cave": [Vector3(4.5, 4.5, 89), Vector3(8, 8.0, 106)],

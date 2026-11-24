@@ -16,7 +16,7 @@ void fragment() {
     float broad = sin(world.z * .37 + world.x * .44 - TIME * 1.08);
     float foam = smoothstep(.66,.98,sin(distance_to_shore * 5.5 + TIME * 1.8 + sin(world.z * .5))) *
         (1. - smoothstep(.05,1.25,distance_to_shore)) * (.57 + broad * .16);
-    vec3 turquoise = mix(vec3(.36,.73,.62), vec3(.036,.35,.42), smoothstep(0.,30.,distance_to_shore));
+    vec3 turquoise = mix(vec3(.26,.58,.48), vec3(.026,.23,.31), smoothstep(0.,30.,distance_to_shore));
     ALBEDO = mix(turquoise + ripple * .019 + broad * .012, vec3(.84,.91,.83), foam);
     NORMAL = normalize(NORMAL + vec3(ripple * .07, broad * .05, 0.0));
     ROUGHNESS = .31 + ripple * .07;

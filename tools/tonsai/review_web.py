@@ -99,7 +99,7 @@ def main():
         startup = round(monotonic() - now, 2)
         page.screenshot(path=config.captures / "spawn.png")
         performance = exercise(page, config.captures)
-        for view in ("coast", "camp", "jungle", "spring", "cave", "cave-interior"):
+        for view in ("coast", "camp", "shelter", "jungle", "spring", "cave", "cave-interior"):
             page.evaluate("view => window.tonsaiView(view)", view)
             page.wait_for_timeout(500)
             page.screenshot(path=config.captures / f"{view}.png")

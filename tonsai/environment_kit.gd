@@ -15,6 +15,7 @@ func build(data: TonsaiSiteData, physical_world: TonsaiTerrain) -> bool:
     for file_name in ["reconstruction-low", "landmarks-low", "limestone", "coastal-tree", "palms", "fern_02"]:
         if not _load_kit(file_name):
             return false
+    _grade_foliage()
     var stone := ShaderMaterial.new()
     stone.shader = ROCK
     stone.set_shader_parameter("limestone", load(TonsaiSiteData.DIR + "rock_06_diff_1k.jpg"))
@@ -71,6 +72,20 @@ func _load_kit(file_name: String) -> bool:
         library[String(mesh_node.name)] = mesh
     scene.free()
     return true
+
+func _grade_foliage() -> void:
+    # The authored leaves were graded in the Three.js lighting pipeline.
+    # Compatibility needs a darker albedo and less dielectric glare.
+    for key: String in library:
+        if not ("leaves" in key or "crown" in key or key.begins_with("fern_02")):
+            continue
+        var mesh := library[key] as ArrayMesh
+        for i in mesh.get_surface_count():
+            var material := mesh.surface_get_material(i).duplicate() as StandardMaterial3D
+            material.albedo_color *= Color("#a0b66f") if key.begins_with("fern") else Color("#849856")
+            material.metallic_specular = .08
+            material.roughness = .97
+            mesh.surface_set_material(i, material)
 
 func _static(key: String, at: Vector3, material: Material = null, shadow := false) -> MeshInstance3D:
     var node := MeshInstance3D.new()
