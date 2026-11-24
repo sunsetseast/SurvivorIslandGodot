@@ -1,0 +1,46 @@
+name: Godot Character Lab
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: character-lab-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-character-lab:
+    name: Validate rig, run lab smoke tests and export Web
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/bin/godot-4.7.2
+            ~/.local/share/godot/export_templates/4.7.2.stable/web_nothreads_release.zip
+          key: godot-4.7.2-stable-linux-x86_64-web-nothreads
+      - run: bash ci/install-godot-web.sh
+      - run: bash ci/build-character-lab.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: survivor-island-character-lab-web
+          path: build/character-lab/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+      - name: Install Chromium headless shell
+        run: |
+          python3 -m pip install playwright==1.62.0
+          python3 -m playwright install --with-deps chromium --only-shell
+      - name: Exercise landscape touch and capture the Web character
+        run: python3 character_lab/tools/review_web.py build/character-lab build/character-lab-captures
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: survivor-island-character-lab-captures
+          path: build/character-lab-captures/
+          if-no-files-found: ignore
+          retention-days: 14
