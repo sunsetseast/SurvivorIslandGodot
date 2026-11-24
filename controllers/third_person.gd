@@ -3,19 +3,19 @@ extends CampHumanoidMotor
 
 const CAMERA_DISTANCE := 4.25
 const DEFAULT_PITCH := -.31
-const LOOK_GRACE := 2.8
+const LOOK_RADIANS_PER_SHORT_EDGE := 2.07
 
 var pivot: Node3D
 var camera: Camera3D
 var yaw := .48
 var pitch := DEFAULT_PITCH
 var sensitivity := 1.0
-var look_held := false
 var touch_direction := Vector2.ZERO
 var run_toggled := false
 var locked := false
 var travel_distance := 0.0
-var _look_timer := LOOK_GRACE
+var _pending_look := Vector2.ZERO
+var _reset_requested := false
 var _camera_distance := CAMERA_DISTANCE
 var _camera_probe := PhysicsShapeQueryParameters3D.new()
 
@@ -45,46 +45,49 @@ func _ready() -> void:
 func orbit(relative: Vector2) -> void:
     if locked:
         return
-    _look_timer = LOOK_GRACE
-    yaw = wrapf(yaw - relative.x * .0047 * sensitivity, -PI, PI)
-    pitch = clampf(pitch - relative.y * .0041 * sensitivity, -1.0, .42)
+    _pending_look += relative
 
 func reset_camera() -> void:
-    if locked:
-        return
-    yaw = wrapf(travel_heading + PI, -PI, PI)
-    pitch = DEFAULT_PITCH
-    _look_timer = LOOK_GRACE
+    _reset_requested = not locked
 
 func clear_controls() -> void:
     touch_direction = Vector2.ZERO
-    look_held = false
-    _look_timer = LOOK_GRACE
+    _pending_look = Vector2.ZERO
+    _reset_requested = false
     run_toggled = false
 
 func _physics_process(delta: float) -> void:
+    if _reset_requested:
+        yaw = wrapf(travel_heading + PI, -PI, PI)
+        pitch = DEFAULT_PITCH
+        _reset_requested = false
+    # Unscaled drag deltas and the backing window share the same units.
+    var screen := DisplayServer.window_get_size()
+    var short_edge := minf(screen.x, screen.y)
+    if short_edge <= 1.0:
+        var viewport := get_viewport().get_visible_rect().size
+        short_edge = maxf(1.0, minf(viewport.x, viewport.y))
+    var radians_per_pixel := LOOK_RADIANS_PER_SHORT_EDGE * sensitivity / short_edge
+    yaw = wrapf(yaw - _pending_look.x * radians_per_pixel, -PI, PI)
+    pitch = clampf(pitch - _pending_look.y * radians_per_pixel * .87, -1.0, .70 if underwater() else .42)
+    _pending_look = Vector2.ZERO
     var previous := global_position
     var input := _local_input()
     var direction := Basis(Vector3.UP, yaw) * Vector3(input.x, 0, input.y)
-    walk_direction(direction, run_toggled or Input.is_physical_key_pressed(KEY_SHIFT), delta, not locked)
+    walk_direction(direction, run_toggled or Input.is_physical_key_pressed(KEY_SHIFT), delta,
+        not locked, sin(pitch) * maxf(0.0, -input.y))
     travel_distance += Vector2(global_position.x - previous.x, global_position.z - previous.z).length()
-    _update_camera(input, delta)
+    _update_camera(delta)
 
-func _update_camera(input: Vector2, delta: float) -> void:
-    if look_held or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
-        _look_timer = LOOK_GRACE
-    else:
-        _look_timer = maxf(0.0, _look_timer - delta)
-    if _look_timer <= 0.0 and input.y < -.65 and absf(input.x) < .16:
-        var behind := travel_heading + PI
-        if absf(angle_difference(yaw, behind)) < .6:
-            yaw = rotate_toward(yaw, behind, delta * .35)
+func _update_camera(delta: float) -> void:
     var focus_height := 1.43
     var camera_pitch := pitch
-    if swimming():
+    if underwater():
+        focus_height = 1.06
+    elif swimming():
         focus_height = maxf(1.35, water.level - global_position.y + .47)
     pivot.position.y = lerpf(pivot.position.y, focus_height, 1.0 - exp(-delta * 11.0))
-    if locomotion != Locomotion.LAND:
+    if locomotion != Locomotion.LAND and not underwater():
         var clearance := global_position.y + pivot.position.y - water.level - .21
         camera_pitch = minf(pitch, asin(clampf(clearance / CAMERA_DISTANCE, -.2, .42)))
     pivot.rotation = Vector3(camera_pitch, yaw, 0)
@@ -107,7 +110,11 @@ func _local_input() -> Vector2:
     return (Vector2(x, z) + touch_direction).limit_length()
 
 func _unhandled_input(event: InputEvent) -> void:
-    if event is InputEventMouseMotion and (event.button_mask & MOUSE_BUTTON_MASK_RIGHT):
-        orbit(event.relative)
-    elif event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_R:
-        reset_camera()
+    if event is InputEventMouseMotion and event.device != InputEvent.DEVICE_ID_EMULATION:
+        if event.button_mask & MOUSE_BUTTON_MASK_RIGHT:
+            orbit(event.screen_relative)
+    elif event is InputEventKey and event.pressed and not event.echo:
+        if event.physical_keycode == KEY_R:
+            reset_camera()
+        elif event.physical_keycode == KEY_SPACE and not locked:
+            toggle_dive()

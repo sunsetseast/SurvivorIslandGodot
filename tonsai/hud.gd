@@ -7,6 +7,8 @@ var banner: Label
 var nearby_button: Button
 var nearby_actor: StringName = &""
 var run_button: Button
+var dive_button: Button
+var sky_button: Button
 var quality_button: Button
 var reset_button: Button
 var sensitivity_button: Button
@@ -32,6 +34,11 @@ func _ready() -> void:
     nearby_button.hide()
     run_button = _button("Walk", _toggle_run)
     add_child(run_button)
+    dive_button = _button("Dive", _toggle_dive)
+    add_child(dive_button)
+    dive_button.hide()
+    sky_button = _button("Sky: Clear", _cycle_sky)
+    add_child(sky_button)
     quality_button = _button("Full quality", _toggle_quality)
     add_child(quality_button)
     reset_button = _button("Center camera", camp.player.reset_camera)
@@ -76,6 +83,8 @@ func _layout() -> void:
     reset_button.position = quality_button.position - Vector2(157, 0)
     sensitivity_button.position = reset_button.position - Vector2(157, 0)
     run_button.position = Vector2(safe.end.x - 147, safe.end.y - 54)
+    dive_button.position = run_button.position
+    sky_button.position = quality_button.position + Vector2(0, 58)
     nearby_button.position = Vector2(safe.end.x - 147, safe.end.y - 112)
     var width := minf(445.0, safe.size.x - 24.0)
     dialog.custom_minimum_size.x = width
@@ -112,6 +121,8 @@ func refresh() -> void:
     nearby_actor = person.contestant if is_instance_valid(person) else &""
     run_button.text = "Run" if camp.player.run_toggled else "Walk"
     run_button.visible = not camp.player.swimming() and not dialog.visible
+    dive_button.visible = not dialog.visible and (camp.player.can_dive() or camp.player.dive_requested)
+    dive_button.text = "Surface" if camp.player.dive_requested else "Dive"
     nearby_button.visible = not nearby_actor.is_empty() and not dialog.visible
     if nearby_button.visible:
         nearby_button.text = "Talk to " + String(CampSimulation.CONTESTANTS[person.contestant])
@@ -121,6 +132,7 @@ func show_dialog(label: String) -> void:
     reply.text = "What do you want to talk about?"
     nearby_button.hide()
     run_button.hide()
+    dive_button.hide()
     dialog.show()
     touch.queue_redraw()
 
@@ -132,6 +144,14 @@ func hide_dialog() -> void:
 func _toggle_run() -> void:
     camp.player.run_toggled = not camp.player.run_toggled
     run_button.text = "Run" if camp.player.run_toggled else "Walk"
+
+func _toggle_dive() -> void:
+    camp.player.toggle_dive()
+    refresh()
+
+func _cycle_sky() -> void:
+    camp.terrain.set_sky_preset((camp.terrain.sky_preset + 1) % TonsaiTerrain.SkyPreset.size())
+    sky_button.text = "Sky: " + ["Clear", "Cloudy", "Night"][camp.terrain.sky_preset]
 
 func _cycle_sensitivity() -> void:
     var sensitivity := camp.player.sensitivity
@@ -154,7 +174,8 @@ func control_positions() -> Dictionary:
     var viewport_size := get_viewport_rect().size
     var controls := {}
     for entry in [["talk", nearby_button], ["run", run_button], ["quality", quality_button],
-            ["topic", topics[0]], ["close", close_button]]:
+            ["topic", topics[0]], ["close", close_button], ["dive", dive_button],
+            ["sky", sky_button], ["reset", reset_button], ["sensitivity", sensitivity_button]]:
         var center: Vector2 = entry[1].get_global_rect().get_center() / viewport_size
         controls[entry[0]] = [center.x, center.y]
     var home := touch.home() / viewport_size

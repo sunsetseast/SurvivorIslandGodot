@@ -11,8 +11,8 @@ mkdir -p "$stage/character_lab/assets" "$stage/tests" "$stage/tools/tonsai" "$ou
 touch build/.gdignore
 cp -R controllers simulation "$stage/"
 mkdir -p "$stage/world/assets"
-cp world/water_surface.gd world/water.gdshader "$stage/world/"
-for asset in surface-swimming.res sunflowers-sky.jpg water-ripple.png seating_log.glb seat_stump.glb shore_rock.glb well_bucket.glb; do
+cp world/water_surface.gd world/water.gdshader world/camp_fire.gd world/fire_flipbook.gdshader "$stage/world/"
+for asset in surface-swimming.res sunflowers-sky.jpg kloofendal-clear.jpg flame02.webp water-ripple.png seating_log.glb seat_stump.glb shore_rock.glb; do
   cp "world/assets/$asset" "$stage/world/assets/"
 done
 mkdir -p "$stage/tonsai/shaders" "$stage/tonsai/generated"
