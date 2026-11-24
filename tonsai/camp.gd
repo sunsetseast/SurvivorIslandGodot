@@ -5,6 +5,7 @@ const REACH := 2.65
 const CAPTURE_VIEWS := {
     "coast": [Vector3(-41, 3.25, 57), Vector3(-27, 11.0, 97)],
     "camp": [Vector3(-13, 4.1, -24), Vector3(1, 2.15, -36)],
+    "fire": [Vector3(-11.0, 3.55, -28.1), Vector3(-9.0, 2.37, -31.0)],
     "shelter": [Vector3(12.0, 3.05, -28.8), Vector3(12.0, 3.0, -44.0)],
     "jungle": [Vector3(14, 2.5, -29), Vector3(26, 2.0, -10)],
     "well": [Vector3(104.1, 11.30, 33.1), Vector3(108, 10.69, 36)],
@@ -15,6 +16,7 @@ var site := TonsaiSiteData.new()
 var simulation := CampSimulation.new()
 var terrain: TonsaiTerrain
 var kit: TonsaiEnvironmentKit
+var props: TonsaiCampProps
 var player: CampThirdPerson
 var navigation: NavigationRegion3D
 var inhabitants: Array[TonsaiNpc] = []
@@ -43,7 +45,7 @@ func _ready() -> void:
     if not kit.build(site, terrain):
         push_error("Tonsai environment kit is incomplete.")
         return
-    var props := TonsaiCampProps.new()
+    props = TonsaiCampProps.new()
     add_child(props)
     props.build(site)
     navigation = NavigationRegion3D.new()
@@ -159,6 +161,7 @@ func end_talk() -> void:
 func set_economy(enabled: bool) -> void:
     economical = enabled
     kit.economy(enabled)
+    props.campfire.quality = CampFire.Quality.ECONOMY if enabled else CampFire.Quality.FULL
 
 func _physics_process(delta: float) -> void:
     if is_instance_valid(partner):
@@ -182,12 +185,18 @@ func _process(delta: float) -> void:
         var distance := npc.global_position.distance_squared_to(player.global_position)
         npc.presentation.tree.active = distance < (38.0 if economical else 61.0) ** 2
     if _review:
+        var actual := player.get_real_velocity()
         _bridge.tonsaiMetrics = JSON.stringify({
             "fps": fps, "draws": draws, "primitives": primitives, "actors": inhabitants.size() + 1,
             "x": player.position.x, "y": player.position.y, "z": player.position.z, "yaw": player.yaw,
             "travel": player.travel_distance, "arrivals": simulation.arrivals,
             "clip": player.motion_clip, "pose": player.presentation.playback.get_current_node(),
             "locomotion": CampHumanoidMotor.Locomotion.keys()[player.locomotion],
+            "heading": player.travel_heading, "camera_y": player.camera.global_position.y,
+            "velocity_x": actual.x, "velocity_z": actual.z,
+            "intent_x": player.movement_intent.x, "intent_z": player.movement_intent.z,
+            "move_finger": hud.touch.move_finger, "look_finger": hud.touch.look_finger,
+            "dive_requested": player.dive_requested, "sky": TonsaiTerrain.SkyPreset.keys()[terrain.sky_preset],
             "startup_ms": Time.get_ticks_msec() - _started if not bool(_bridge.tonsaiMetrics) else 0,
             "nearby": str(hud.nearby_actor),
             "dialogue": str(partner.contestant) if is_instance_valid(partner) else "",

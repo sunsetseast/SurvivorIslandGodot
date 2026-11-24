@@ -1,7 +1,7 @@
 // Adapted from GodotLearning Stylized Water (CC0 1.0).
 // https://godotlearning.com/shaders/stylized-water
 shader_type spatial;
-render_mode blend_mix, depth_draw_opaque, cull_back;
+render_mode blend_mix, depth_draw_opaque, cull_disabled;
 
 uniform sampler2D scene_depth : hint_depth_texture, repeat_disable, filter_nearest;
 uniform sampler2D ripples : hint_normal, filter_linear_mipmap, repeat_enable;
@@ -40,6 +40,10 @@ void fragment() {
     ALPHA = min(1.0, water.a + foam + fresnel * .15);
     NORMAL_MAP = vec3((a + b * .62) * .42 + .5, 1.0);
     NORMAL_MAP_DEPTH = .26;
+    if (!FRONT_FACING) {
+        ALBEDO = mix(vec3(.13, .46, .48), vec3(.59, .81, .73), patches * .32 + fresnel * .35);
+        ALPHA = .55 + fresnel * .29;
+    }
     ROUGHNESS = mix(.30, .79, foam);
     SPECULAR = .21;
 }

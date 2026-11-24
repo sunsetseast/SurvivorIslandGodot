@@ -3,6 +3,7 @@ import argparse
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
+from math import atan2, cos, hypot, pi, sin
 from pathlib import Path
 from statistics import median
 from threading import Thread
@@ -75,16 +76,85 @@ def exercise(page, captures):
     }
 
 
+def signed_turn(start, end):
+    return atan2(sin(end - start), cos(end - start))
+
+
+def sustained_touch(page, captures):
+    page.evaluate("window.tonsaiView('shore-start')")
+    start = until(page, lambda m: -54.2 < m["x"] < -53.8, "Could not reset travel route")
+    cdp = page.context.new_cdp_session(page)
+    width, height = page.viewport_size["width"], page.viewport_size["height"]
+    x, y = start["controls"]["stick"]
+    left = {"x": x * width, "y": y * height, "id": 1}
+    right = {"x": width * .65, "y": height * .49, "id": 2}
+
+    def dispatch(kind, *points):
+        cdp.send("Input.dispatchTouchEvent", {"type": kind, "touchPoints": list(points)})
+
+    dispatch("touchStart", left)
+    left["y"] -= height * .14
+    dispatch("touchMove", left)
+    state = until(page, lambda m: m["travel"] > start["travel"] + .25, "Forward hold failed")
+    bearing = state["yaw"]
+    forward_x, forward_z = -sin(bearing), -cos(bearing)
+    origin = state
+    worst_drift = 0.0
+    worst_heading_error = 0.0
+    min_velocity_alignment = 1.0
+    dispatch("touchStart", left, right)
+    # Cross the original split with the look finger while the left stick
+    # remains held and reverse the swipe repeatedly.
+    for fraction in (.89, .66, .42, .30, .61, .86):
+        previous = state["yaw"]
+        old_x = right["x"]
+        right["x"] = round(width * fraction)
+        dispatch("touchMove", left, right)
+        state = until(page, lambda m: abs(signed_turn(previous, m["yaw"])) > .04,
+                      "Orbit lost a held-forward swipe")
+        expected = -(right["x"] - old_x) / height * 2.07
+        assert abs(signed_turn(previous, state["yaw"]) - expected) < .10, state
+        assert state["move_finger"] >= 0 and state["look_finger"] >= 0, state
+        assert hypot(state["intent_x"] - forward_x, state["intent_z"] - forward_z) < .04, state
+        vx, vz = state["velocity_x"], state["velocity_z"]
+        speed = hypot(vx, vz)
+        assert speed > .2, state
+        min_velocity_alignment = min(min_velocity_alignment, (vx * forward_x + vz * forward_z) / speed)
+        worst_heading_error = max(worst_heading_error, abs(signed_turn(bearing + pi, state["heading"])))
+        dx, dz = state["x"] - origin["x"], state["z"] - origin["z"]
+        worst_drift = max(worst_drift, abs(dx * forward_z - dz * forward_x))
+    assert state["travel"] > start["travel"] + .8, state
+    assert min_velocity_alignment > .98 and worst_heading_error < .08 and worst_drift < .15, state
+    page.screenshot(path=captures / "held-forward-orbit.png")
+    dispatch("touchCancel")
+    until(page, lambda m: m["move_finger"] == m["look_finger"] == -1, "Canceled fingers stayed active")
+    return {
+        "min_velocity_alignment": min_velocity_alignment,
+        "max_heading_error_rad": worst_heading_error,
+        "max_cross_track_drift_m": worst_drift,
+    }
+
+
 def swim(page, captures):
     page.evaluate("window.tonsaiView('shore-start')")
     until(page, lambda m: -54.2 < m["x"] < -53.8, "Shore setup failed")
     page.keyboard.down("w")
     until(page, lambda m: m["locomotion"] == "WADE", "Wading state missing")
-    until(page, lambda m: m["pose"] == "Swim" and m["x"] < -67.0, "Stroke state missing", timeout=45)
+    until(page, lambda m: m["pose"] == "Swim" and m["x"] < -72.0, "Stroke state missing", timeout=45)
     page.screenshot(path=captures / "swimming.png")
     page.keyboard.up("w")
     until(page, lambda m: m["pose"] == "Tread", "Treading state missing")
     page.screenshot(path=captures / "treading.png")
+    tap(page, "dive")
+    submerged = until(page, lambda m: m["locomotion"] == "UNDERWATER" and m["camera_y"] < -.1,
+                      "Dive did not put the camera underwater")
+    page.keyboard.down("w")
+    until(page, lambda m: m["x"] < submerged["x"] - 1.0 and m["pose"] == "Swim",
+          "Underwater stroke did not travel")
+    page.keyboard.up("w")
+    page.screenshot(path=captures / "underwater.png")
+    tap(page, "dive")
+    until(page, lambda m: m["locomotion"] == "TREAD" and m["camera_y"] > .1, "Surface did not return to treading")
     page.keyboard.down("s")
     until(page, lambda m: m["locomotion"] == "WADE", "Shore return did not wade", timeout=45)
     until(page, lambda m: m["locomotion"] == "LAND", "Shore return did not walk")
@@ -117,11 +187,22 @@ def main():
         startup = round(monotonic() - now, 2)
         page.screenshot(path=config.captures / "spawn.png")
         performance = exercise(page, config.captures)
+        steering = sustained_touch(page, config.captures)
         swim(page, config.captures)
-        for view in ("coast", "camp", "shelter", "jungle", "well", "cave", "cave-interior"):
+        for view in ("coast", "camp", "shelter", "jungle", "well", "cave", "cave-interior", "fire"):
             page.evaluate("view => window.tonsaiView(view)", view)
             page.wait_for_timeout(500)
             page.screenshot(path=config.captures / f"{view}.png")
+        tap(page, "sky")
+        until(page, lambda m: m["sky"] == "CLOUDY", "Cloudy preset failed")
+        page.screenshot(path=config.captures / "fire-cloudy.png")
+        tap(page, "sky")
+        until(page, lambda m: m["sky"] == "NIGHT", "Night preset failed")
+        page.screenshot(path=config.captures / "fire-night.png")
+        page.wait_for_timeout(240)
+        page.screenshot(path=config.captures / "fire-night-next.png")
+        tap(page, "sky")
+        until(page, lambda m: m["sky"] == "CLEAR", "Clear preset was not restored")
         assert not errors, errors
         report = {
             "browser": browser.version,
@@ -129,7 +210,9 @@ def main():
             "startup_s": startup,
             "six_animated_characters": performance,
             "conversation_and_two_thumb_controls": "passed",
-            "walk_wade_swim_tread_and_shore_return": "passed",
+            "held_forward_swipes_and_cancellation": steering,
+            "walk_wade_swim_dive_surface_and_shore_return": "passed",
+            "clear_cloudy_and_night_presets": "passed",
         }
         (config.captures / "browser-metrics.json").write_text(json.dumps(report, indent=2) + "\n")
         print(json.dumps(report, indent=2))
