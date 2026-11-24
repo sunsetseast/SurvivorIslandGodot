@@ -280,9 +280,9 @@ def resume_after_reload(page):
     page.reload(wait_until="domcontentloaded")
     reloaded = app_wait(page, 'a.screen === "MAIN"')
     assert reloaded["guest"] == before["guest"]
-    assert reloaded["preferences"] == {
-        "camera_steering": True, "economy": True, "run": False, "sensitivity": 1.4,
-    }, reloaded
+    preferences = reloaded["preferences"]
+    assert preferences["camera_steering"] and preferences["economy"] and not preferences["run"], reloaded
+    assert abs(preferences["sensitivity"] - 1.4) < .0001, reloaded
     app_tap(page, "continue")
     after = app_wait(page, 'a.screen === "SESSION" && a.knowledge === 1')
     assert after["season"] == before["season"] and after["tick"] >= saved["tick"]

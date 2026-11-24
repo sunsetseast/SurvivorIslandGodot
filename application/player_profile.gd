@@ -30,8 +30,11 @@ func _init(store: LocalDataStore) -> void:
     for key: String in DEFAULTS:
         var value: Variant = parsed.get(key)
         if key == "sensitivity":
-            if value in [.65, 1.0, 1.4]:
-                preferences[key] = float(value)
+            if value is float or value is int:
+                for level: float in [.65, 1.0, 1.4]:
+                    if is_equal_approx(float(value), level):
+                        preferences[key] = level
+                        break
         elif value is bool:
             preferences[key] = value
 
@@ -39,4 +42,4 @@ func set_preference(key: String, value: Variant) -> bool:
     preferences[key] = value
     var record := preferences.duplicate()
     record["version"] = 1
-    return _store.write("preferences", JSON.stringify(record))
+    return _store.write("preferences", JSON.stringify(record, "", true, true))

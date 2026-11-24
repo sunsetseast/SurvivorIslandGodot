@@ -17,6 +17,10 @@ func _test() -> void:
     var store := LocalDataStore.new("application-test-" + GameStateData.new_id())
     app.profile = PlayerProfile.new(store)
     app.saves = LocalSaveProvider.new(store)
+    for level: float in [.65, 1.4]:
+        _check(app.profile.set_preference("sensitivity", level), "Write sensitivity preference")
+        _check(PlayerProfile.new(store).preferences.sensitivity == level, "Reload exact sensitivity preset")
+    app.profile.set_preference("sensitivity", 1.0)
     app._new(1)
     var camp := app.locations.camp
     if camp == null:
@@ -65,5 +69,6 @@ func _test() -> void:
     session = null
     LocalSaveProvider.new(store).erase(1)
     store.erase("guest")
+    store.erase("preferences")
     print("Application lifecycle: ", failures, " failures")
     quit(int(failures > 0))
