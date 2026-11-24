@@ -4,16 +4,33 @@ extends CampHumanoidMotor
 const CAMERA_DISTANCE := 4.25
 const DEFAULT_PITCH := -.31
 const LOOK_RADIANS_PER_SHORT_EDGE := 2.07
+# Thresholds apply after the touch HUD's radial dead zone.
+const STICK_ENGAGE := .08
+const STICK_NEUTRAL := .03
 
 var pivot: Node3D
 var camera: Camera3D
 var yaw := .48
 var pitch := DEFAULT_PITCH
 var sensitivity := 1.0
-var touch_direction := Vector2.ZERO
+var camera_relative_steering := false
+var touch_direction := Vector2.ZERO:
+    set(value):
+        touch_direction = value.limit_length()
+        var strength := touch_direction.length()
+        if strength <= STICK_NEUTRAL or locked:
+            _stick_active = false
+        elif not _stick_active and strength >= STICK_ENGAGE:
+            _stick_active = true
+            _stick_yaw = yaw
+            _stick_follows_camera = camera_relative_steering
 var run_toggled := false
 var locked := false
 var travel_distance := 0.0
+var movement_intent := Vector3.ZERO
+var _stick_active := false
+var _stick_yaw := 0.0
+var _stick_follows_camera := false
 var _pending_look := Vector2.ZERO
 var _reset_requested := false
 var _camera_distance := CAMERA_DISTANCE
@@ -50,9 +67,13 @@ func orbit(relative: Vector2) -> void:
 func reset_camera() -> void:
     _reset_requested = not locked
 
+func cancel_look() -> void:
+    _pending_look = Vector2.ZERO
+
 func clear_controls() -> void:
     touch_direction = Vector2.ZERO
-    _pending_look = Vector2.ZERO
+    movement_intent = Vector3.ZERO
+    cancel_look()
     _reset_requested = false
     run_toggled = false
 
@@ -73,8 +94,9 @@ func _physics_process(delta: float) -> void:
     _pending_look = Vector2.ZERO
     var previous := global_position
     var input := _local_input()
-    var direction := Basis(Vector3.UP, yaw) * Vector3(input.x, 0, input.y)
-    walk_direction(direction, run_toggled or Input.is_physical_key_pressed(KEY_SHIFT), delta,
+    var movement_yaw := _stick_yaw if _stick_active and not _stick_follows_camera else yaw
+    movement_intent = Vector3(input.x, 0, input.y).rotated(Vector3.UP, movement_yaw)
+    walk_direction(movement_intent, run_toggled or Input.is_physical_key_pressed(KEY_SHIFT), delta,
         not locked, sin(pitch) * maxf(0.0, -input.y))
     travel_distance += Vector2(global_position.x - previous.x, global_position.z - previous.z).length()
     _update_camera(delta)
@@ -105,9 +127,33 @@ func _update_camera(delta: float) -> void:
 func _local_input() -> Vector2:
     if locked:
         return Vector2.ZERO
+    if _stick_active:
+        var strength := inverse_lerp(STICK_NEUTRAL, 1.0, touch_direction.length())
+        return touch_direction.normalized() * strength
     var x := int(Input.is_physical_key_pressed(KEY_D)) - int(Input.is_physical_key_pressed(KEY_A))
     var z := int(Input.is_physical_key_pressed(KEY_S)) - int(Input.is_physical_key_pressed(KEY_W))
-    return (Vector2(x, z) + touch_direction).limit_length()
+    return Vector2(x, z).limit_length()
+
+func _steer_planar(input: Vector3, speed: float, acceleration: float, braking: float, delta: float) -> void:
+    if locked:
+        planar = Vector3.ZERO
+        return
+    if input.is_zero_approx():
+        planar = planar.move_toward(Vector3.ZERO, braking * delta)
+        return
+    var goal := atan2(input.x, input.z)
+    var current_speed := planar.length()
+    # Brake before a reversal, then steer velocity along the visible heading.
+    # Smaller turns stay in motion and accelerate as the heading lines up.
+    if absf(angle_difference(travel_heading, goal)) > PI * .5 and current_speed > .12:
+        planar = planar.move_toward(Vector3.ZERO, braking * 2.0 * delta)
+        return
+    set_heading(rotate_toward(travel_heading, goal, (13.0 if swimming() else 20.0) * delta))
+    var alignment := maxf(0.0, cos(angle_difference(travel_heading, goal)))
+    var target_speed := input.length() * speed * alignment
+    var rate := braking if target_speed < current_speed else acceleration
+    planar = Vector3(sin(travel_heading), 0, cos(travel_heading)) * move_toward(
+        current_speed, target_speed, rate * delta)
 
 func _unhandled_input(event: InputEvent) -> void:
     if event is InputEventMouseMotion and event.device != InputEvent.DEVICE_ID_EMULATION:

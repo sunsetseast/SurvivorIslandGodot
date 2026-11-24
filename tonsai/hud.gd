@@ -12,6 +12,7 @@ var sky_button: Button
 var quality_button: Button
 var reset_button: Button
 var sensitivity_button: Button
+var steering_button: Button
 var stats: Label
 var dialog: PanelContainer
 var speaker: Label
@@ -45,6 +46,8 @@ func _ready() -> void:
     add_child(reset_button)
     sensitivity_button = _button("Look: Medium", _cycle_sensitivity)
     add_child(sensitivity_button)
+    steering_button = _button("Steer: Stick", _toggle_steering)
+    add_child(steering_button)
     dialog = PanelContainer.new()
     var card := StyleBoxFlat.new()
     card.bg_color = Color("#152830ed")
@@ -85,6 +88,7 @@ func _layout() -> void:
     run_button.position = Vector2(safe.end.x - 147, safe.end.y - 54)
     dive_button.position = run_button.position
     sky_button.position = quality_button.position + Vector2(0, 58)
+    steering_button.position = reset_button.position + Vector2(0, 58)
     nearby_button.position = Vector2(safe.end.x - 147, safe.end.y - 112)
     var width := minf(445.0, safe.size.x - 24.0)
     dialog.custom_minimum_size.x = width
@@ -163,6 +167,11 @@ func _toggle_quality() -> void:
     camp.set_economy(not camp.economical)
     quality_button.text = "Economy" if camp.economical else "Full quality"
 
+func _toggle_steering() -> void:
+    var player := camp.player
+    player.camera_relative_steering = not player.camera_relative_steering
+    steering_button.text = "Steer: Camera" if player.camera_relative_steering else "Steer: Stick"
+
 func _unhandled_key_input(event: InputEvent) -> void:
     if event is InputEventKey and event.pressed and not event.echo:
         if event.physical_keycode == KEY_E:
@@ -175,7 +184,8 @@ func control_positions() -> Dictionary:
     var controls := {}
     for entry in [["talk", nearby_button], ["run", run_button], ["quality", quality_button],
             ["topic", topics[0]], ["close", close_button], ["dive", dive_button],
-            ["sky", sky_button], ["reset", reset_button], ["sensitivity", sensitivity_button]]:
+            ["sky", sky_button], ["reset", reset_button], ["sensitivity", sensitivity_button],
+            ["steering", steering_button]]:
         var center: Vector2 = entry[1].get_global_rect().get_center() / viewport_size
         controls[entry[0]] = [center.x, center.y]
     var home := touch.home() / viewport_size

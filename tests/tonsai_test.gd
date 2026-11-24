@@ -28,12 +28,18 @@ func _test() -> void:
     _check(camp.site.layout.hidingCandidates.size() == 39, "Missing candidate identities")
     _check(camp.kit.library.size() >= 45 and camp.kit.sections > 100, "Incomplete environment kit")
     _check(camp.player.is_on_floor(), "Spawn is not grounded")
+    var stick := camp.hud.touch.home()
+    _press(1, stick)
+    _drag(1, stick - Vector2(0, camp.hud.touch.radius), Vector2.ZERO)
+    await _ticks(3)
     _check(camp.begin_talk(), "Expected nearby contestant at camp spawn")
     if is_instance_valid(camp.partner):
         var contestant := camp.partner
         var id := contestant.contestant
         var previous := contestant.position
         await _ticks(35)
+        _check(camp.hud.touch.move_finger == -1 and camp.player.movement_intent == Vector3.ZERO
+            and camp.player.planar == Vector3.ZERO, "Conversation kept the previous movement gesture")
         _check(contestant.position.distance_to(previous) < .12, "Talk should interrupt travel")
         _check(contestant.motion_clip == &"Talk", "NPC did not play talking state")
         _check(not camp.respond(&"water").is_empty(), "Dialogue response missing")
@@ -41,6 +47,9 @@ func _test() -> void:
         _check(camp.simulation.knowledge_for(&"yul").is_empty(), "Private memory leaked across identities")
         camp.end_talk()
         _check(not camp.player.locked and contestant.talking_to == null, "Controls did not resume")
+        _drag(1, stick - Vector2(0, camp.hud.touch.radius), Vector2.ZERO)
+        await _ticks(2)
+        _check(camp.player.movement_intent == Vector3.ZERO, "Old finger resumed after conversation")
         await _ticks(420)
         _check(contestant.travel_distance > 3.0, "NPC did not resume a physical route")
     # Isolate static site reachability from momentary NPC traffic. Dialogue and
@@ -67,6 +76,7 @@ func _test() -> void:
     await _test_touch()
     await _test_water()
     _test_props()
+    await _test_movement_intent()
     print("Tonsai result: ", camp.player.travel_distance, " m continuously walked; ",
         camp.simulation.arrivals, " NPC arrivals; ", failures, " failures")
     quit(int(failures > 0))
@@ -211,6 +221,174 @@ func _drag(index: int, where: Vector2, screen_delta: Vector2) -> void:
     event.position = where
     event.screen_relative = screen_delta
     root.push_input(event, true)
+
+func _test_movement_intent() -> void:
+    var player := camp.player
+    var touch := camp.hud.touch
+    # A flat pad isolates steering from slope, obstacle and wave effects.
+    var pad_origin := Vector3(500, 0, 500)
+    var pad := StaticBody3D.new()
+    var shape := CollisionShape3D.new()
+    var box := BoxShape3D.new()
+    box.size = Vector3(80, 1, 80)
+    shape.shape = box
+    pad.add_child(shape)
+    pad.position = pad_origin - Vector3.UP * .5
+    camp.add_child(pad)
+    var left := touch.home()
+    var size := root.get_visible_rect().size
+    var right := size * Vector2(.67, .49)
+    var window := DisplayServer.window_get_size()
+    var short_edge := minf(window.x, window.y)
+    if short_edge <= 1.0:
+        short_edge = minf(size.x, size.y)
+    var pixels_per_radian := short_edge / CampThirdPerson.LOOK_RADIANS_PER_SHORT_EDGE
+    var forward := Vector2.UP * touch.radius
+    for depth in [0.0, .6, 6.0]:
+        player.water = CampWaterSurface.new(depth, func(_x: float, _z: float) -> float: return 0.0)
+        var angles := [45, -45, 90, -90, 180, -180, 360, -360] if depth == 0.0 else [360, -360]
+        for degrees in angles:
+            touch.cancel()
+            player.position = pad_origin + Vector3.UP * (depth - 1.07 if depth > 1.0 else .04)
+            player.velocity = Vector3.ZERO
+            player.planar = Vector3.ZERO
+            player.yaw = .37
+            player.set_heading(PI + player.yaw)
+            await _ticks(10)
+            player.run_toggled = true
+            _press(1, left)
+            _drag(1, left + forward, Vector2.ZERO)
+            await _ticks(40)
+            var from := player.position
+            var start_yaw := player.yaw
+            var expected := Vector3.FORWARD.rotated(Vector3.UP, start_yaw)
+            var previous := from
+            var max_drift := 0.0
+            var min_alignment := 1.0
+            var max_heading_error := 0.0
+            var max_intent_error := 0.0
+            var max_yaw_error := 0.0
+            _press(2, right)
+            for i in 8:
+                var step := deg_to_rad(degrees) / 8.0
+                var across_split := Vector2(size.x * .4, right.y)
+                _drag(2, across_split if i % 2 == 0 else right, Vector2(-step * pixels_per_radian, 0))
+                await _ticks(2)
+                _check(touch.move_finger == 1 and touch.look_finger == 2, "Crossed look touch lost ownership")
+                max_intent_error = maxf(max_intent_error, player.movement_intent.distance_to(expected))
+                max_yaw_error = maxf(max_yaw_error, absf(angle_difference(player.yaw, start_yaw + step * (i + 1))))
+                max_heading_error = maxf(max_heading_error, absf(angle_difference(player.travel_heading, PI + start_yaw)))
+                var actual := player.get_real_velocity() * Vector3(1, 0, 1)
+                min_alignment = minf(min_alignment, actual.normalized().dot(expected))
+                var displacement := (player.position - from) * Vector3(1, 0, 1)
+                max_drift = maxf(max_drift, displacement.cross(expected).length())
+                _check((player.position - previous).dot(expected) > .015, "Forward trajectory stalled or reversed")
+                previous = player.position
+            var label := "%s° orbit at water depth %.1f" % [degrees, depth]
+            _check(max_yaw_error < .003 and max_intent_error < .003, "Camera or movement intent mismatch: " + label)
+            _check(min_alignment > .995 and max_heading_error < .025 and max_drift < .035,
+                "Velocity, heading or trajectory redirected: " + label)
+            print("%s | yaw error %.4f rad | intent error %.4f | min velocity dot %.4f | heading error %.4f rad | drift %.4f m"
+                % [label, max_yaw_error, max_intent_error, min_alignment, max_heading_error, max_drift])
+            _press(2, right, false)
+            var released_yaw := player.yaw
+            await _ticks(4)
+            _check(player.movement_intent.distance_to(expected) < .003 and player.yaw == released_yaw,
+                "Look release redirected the player")
+        var expected_state: CampHumanoidMotor.Locomotion = [CampHumanoidMotor.Locomotion.LAND, CampHumanoidMotor.Locomotion.WADE,
+            CampHumanoidMotor.Locomotion.SWIM][[0.0, .6, 6.0].find(depth)]
+        _check(player.locomotion == expected_state, "Unexpected test-pad locomotion")
+
+    var expected := player.movement_intent
+    player.toggle_dive()
+    player.pitch = -.6
+    var before_dive := player.position.y
+    _press(2, right)
+    _drag(2, right, Vector2(-PI * pixels_per_radian, 0))
+    await _ticks(110)
+    _check(player.underwater() and player.position.y < before_dive - 1.8
+        and player.movement_intent.distance_to(expected) < .003
+        and (player.get_real_velocity() * Vector3(1, 0, 1)).normalized().dot(expected) > .995,
+        "Diving changed the horizontal bearing or lost pitch-based depth control")
+    _press(2, right, false)
+    player.reset_camera()
+    await _ticks(3)
+    _check(absf(angle_difference(player.yaw, player.travel_heading + PI)) < .003
+        and player.movement_intent.distance_to(expected) < .003, "Camera reset redirected held movement")
+    _drag(1, left + Vector2.RIGHT * touch.radius, Vector2.ZERO)
+    await _ticks(24)
+    var turned_intent := player.movement_intent
+    player.reset_camera()
+    await _ticks(3)
+    _check(player.movement_intent.distance_to(turned_intent) < .003
+        and absf(angle_difference(player.yaw, player.travel_heading + PI)) < .003,
+        "Centering behind a deliberate turn replaced the gesture's camera reference")
+    _press(2, right)
+    var uncanceled_yaw := player.yaw
+    _drag(2, right, Vector2(pixels_per_radian, 0))
+    _press(2, right, false, true)
+    await _ticks(2)
+    _check(touch.move_finger == 1 and player.yaw == uncanceled_yaw, "Canceled look altered an active gesture")
+
+    # Reset the camera to a different bearing, then keep the same thumb down
+    # while passing through neutral and beginning a fresh gesture.
+    player.yaw = -PI * .5
+    _drag(1, left + forward * .18, Vector2.ZERO)
+    await _ticks(2)
+    _check(player.movement_intent.normalized().dot(expected) > .995, "Dead zone jitter recaptured the camera")
+    _drag(1, left, Vector2.ZERO)
+    _drag(1, left + forward, Vector2.ZERO)
+    await _ticks(32)
+    _check(player.movement_intent.dot(Vector3.RIGHT) > .995, "Neutral did not rearm the same finger")
+    _press(1, left, false)
+    player.yaw = 0.0
+    _press(1, left)
+    _drag(1, left + forward * .55, Vector2.ZERO)
+    await _ticks(36)
+    _check(player.movement_intent.normalized().dot(Vector3.FORWARD) > .995
+        and player.get_real_velocity().z < -.5 and player.get_real_velocity().z > -1.15,
+        "Released gesture did not recapture heading and analog speed")
+    _drag(1, Vector2(size.x * .7, left.y), Vector2.ZERO)
+    await _ticks(24)
+    _check(touch.move_finger == 1 and touch.look_finger == -1 and absf(player.yaw) < .003
+        and player.get_real_velocity().x > .8, "Crossed movement touch did not steer right")
+    _drag(1, left - Vector2.RIGHT * touch.radius, Vector2.ZERO)
+    var lowest_speed := player.planar.length()
+    var reversed := false
+    for frame in 32:
+        await _ticks(1)
+        var actual := player.get_real_velocity() * Vector3(1, 0, 1)
+        var heading := Vector3(sin(player.travel_heading), 0, cos(player.travel_heading))
+        _check(actual.length() < .08 or actual.normalized().dot(heading) > .995, "Reversal slid sideways")
+        if not reversed:
+            lowest_speed = minf(lowest_speed, actual.length())
+            reversed = actual.x < -.08
+    _check(reversed and lowest_speed < .18 and player.get_real_velocity().x < -1.0,
+        "Reversal failed to brake and accelerate in the opposite direction")
+    for step in 5:
+        var steer := Vector2.RIGHT if step % 2 == 0 else Vector2.LEFT
+        _drag(1, left + steer * touch.radius, Vector2.ZERO)
+        await _ticks(3)
+        _check(player.movement_intent.dot(Vector3(steer.x, 0, 0)) > .995 and player.planar.length() <= 1.86,
+            "Rapid joystick reversals lost input or overshot swim speed")
+    await _ticks(36)
+    _check(player.get_real_velocity().x > 1.0, "Rapid reversals did not settle toward the last input")
+    touch.notification(Node.NOTIFICATION_APPLICATION_FOCUS_OUT)
+    await _ticks(22)
+    _check(touch.move_finger == -1 and player.movement_intent == Vector3.ZERO
+        and player.planar == Vector3.ZERO, "Focus loss left active input")
+
+    camp.hud.steering_button.pressed.emit()
+    player.yaw = 0.0
+    _press(1, left)
+    _drag(1, left + forward, Vector2.ZERO)
+    await _ticks(16)
+    _press(2, right)
+    _drag(2, right, Vector2(-PI * .5 * pixels_per_radian, 0))
+    await _ticks(36)
+    _check(player.movement_intent.dot(Vector3.LEFT) > .995 and player.get_real_velocity().x < -.8,
+        "Optional camera-relative steering did not follow the orbit")
+    touch.cancel()
 
 func _test_props() -> void:
     _check(is_instance_valid(camp.props.well_lid) and is_instance_valid(camp.props.well_scoop),

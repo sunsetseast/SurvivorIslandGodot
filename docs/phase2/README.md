@@ -48,7 +48,7 @@ The Tonsai workflow uploads `survivor-island-tonsai-web` rather than deploying. 
 ### iPhone 17 Pro Max
 
 1. Open the authorized HTTPS preview in Safari, turn off orientation lock, and rotate to landscape.
-2. Talk to the nearby contestant, pick a question and close the dialogue. Try the left stick and right-half orbit together. Lift each thumb and verify its control stops. Tap Walk to switch to running.
+2. Talk to the nearby contestant, pick a question and close the dialogue. Tap Walk to switch to running. Hold the left stick forward and swipe quickly in both directions with the right thumb. The character should keep its travel direction as the view rotates. Return the stick to center and push forward again to travel relative to the new view. Tap **Steer: Stick** to select **Steer: Camera**, which applies from the next stick gesture.
 3. Walk up the shelter ramp, then follow the trail east to freshwater. Follow the beach south to the cave. Watch for wall clipping, stuck NPCs, or animation sliding.
 4. Record load time, FPS during movement, and any stalls at Full quality and Economy. Switch Safari tabs and rotate twice to check input cancellation. Aim for 60 FPS and use 30 FPS as the fallback threshold for device acceptance.
 

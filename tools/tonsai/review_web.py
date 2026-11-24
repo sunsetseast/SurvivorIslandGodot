@@ -3,7 +3,7 @@ import argparse
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
-from math import atan2, cos, sin
+from math import atan2, cos, hypot, pi, sin
 from pathlib import Path
 from statistics import median
 from threading import Thread
@@ -96,6 +96,12 @@ def sustained_touch(page, captures):
     left["y"] -= height * .14
     dispatch("touchMove", left)
     state = until(page, lambda m: m["travel"] > start["travel"] + .25, "Forward hold failed")
+    bearing = state["yaw"]
+    forward_x, forward_z = -sin(bearing), -cos(bearing)
+    origin = state
+    worst_drift = 0.0
+    worst_heading_error = 0.0
+    min_velocity_alignment = 1.0
     dispatch("touchStart", left, right)
     # Cross the original split with the look finger while the left stick
     # remains held and reverse the swipe repeatedly.
@@ -109,10 +115,24 @@ def sustained_touch(page, captures):
         expected = -(right["x"] - old_x) / height * 2.07
         assert abs(signed_turn(previous, state["yaw"]) - expected) < .10, state
         assert state["move_finger"] >= 0 and state["look_finger"] >= 0, state
+        assert hypot(state["intent_x"] - forward_x, state["intent_z"] - forward_z) < .04, state
+        vx, vz = state["velocity_x"], state["velocity_z"]
+        speed = hypot(vx, vz)
+        assert speed > .2, state
+        min_velocity_alignment = min(min_velocity_alignment, (vx * forward_x + vz * forward_z) / speed)
+        worst_heading_error = max(worst_heading_error, abs(signed_turn(bearing + pi, state["heading"])))
+        dx, dz = state["x"] - origin["x"], state["z"] - origin["z"]
+        worst_drift = max(worst_drift, abs(dx * forward_z - dz * forward_x))
     assert state["travel"] > start["travel"] + .8, state
+    assert min_velocity_alignment > .98 and worst_heading_error < .08 and worst_drift < .15, state
     page.screenshot(path=captures / "held-forward-orbit.png")
     dispatch("touchCancel")
     until(page, lambda m: m["move_finger"] == m["look_finger"] == -1, "Canceled fingers stayed active")
+    return {
+        "min_velocity_alignment": min_velocity_alignment,
+        "max_heading_error_rad": worst_heading_error,
+        "max_cross_track_drift_m": worst_drift,
+    }
 
 
 def swim(page, captures):
@@ -167,7 +187,7 @@ def main():
         startup = round(monotonic() - now, 2)
         page.screenshot(path=config.captures / "spawn.png")
         performance = exercise(page, config.captures)
-        sustained_touch(page, config.captures)
+        steering = sustained_touch(page, config.captures)
         swim(page, config.captures)
         for view in ("coast", "camp", "shelter", "jungle", "well", "cave", "cave-interior", "fire"):
             page.evaluate("view => window.tonsaiView(view)", view)
@@ -190,7 +210,7 @@ def main():
             "startup_s": startup,
             "six_animated_characters": performance,
             "conversation_and_two_thumb_controls": "passed",
-            "held_forward_swipes_and_cancellation": "passed",
+            "held_forward_swipes_and_cancellation": steering,
             "walk_wade_swim_dive_surface_and_shore_return": "passed",
             "clear_cloudy_and_night_presets": "passed",
         }

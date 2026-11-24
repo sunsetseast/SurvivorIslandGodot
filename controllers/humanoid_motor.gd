@@ -72,10 +72,7 @@ func walk_direction(desired: Vector3, running: bool, delta: float, animate := tr
         var drag := smoothstep(WADE_EXIT, SWIM_ENTER, water.depth_at(global_position))
         speed *= lerpf(.89, .39, drag)
     var input := desired.limit_length()
-    var reversing := planar.dot(input) < 0.0
-    if input.length_squared() > .012:
-        face_point(global_position + input, delta, 10.0 if swimming() else 16.0)
-    planar = planar.move_toward(input * speed, delta * (braking if reversing or input.is_zero_approx() else acceleration))
+    _steer_planar(input, speed, acceleration, braking, delta)
     velocity.x = planar.x
     velocity.z = planar.z
     if swimming():
@@ -107,6 +104,12 @@ func walk_direction(desired: Vector3, running: bool, delta: float, animate := tr
         else:
             set_motion(&"Idle" if magnitude < .16 else (&"Jog" if running and magnitude > 2.55 else &"Walk"))
         presentation.match_speed(motion_clip, magnitude)
+
+func _steer_planar(input: Vector3, speed: float, acceleration: float, braking: float, delta: float) -> void:
+    var reversing := planar.dot(input) < 0.0
+    if input.length_squared() > .012:
+        face_point(global_position + input, delta, 10.0 if swimming() else 16.0)
+    planar = planar.move_toward(input * speed, delta * (braking if reversing or input.is_zero_approx() else acceleration))
 
 func swimming() -> bool:
     return locomotion >= Locomotion.SWIM

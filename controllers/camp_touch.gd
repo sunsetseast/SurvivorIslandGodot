@@ -51,6 +51,8 @@ func _input(event: InputEvent) -> void:
             get_viewport().set_input_as_handled()
         elif event.index == look_finger:
             look_finger = -1
+            if event.canceled:
+                motor.cancel_look()
             get_viewport().set_input_as_handled()
     elif event is InputEventScreenDrag and not motor.locked:
         if event.index == move_finger:

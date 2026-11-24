@@ -185,6 +185,7 @@ func _process(delta: float) -> void:
         var distance := npc.global_position.distance_squared_to(player.global_position)
         npc.presentation.tree.active = distance < (38.0 if economical else 61.0) ** 2
     if _review:
+        var actual := player.get_real_velocity()
         _bridge.tonsaiMetrics = JSON.stringify({
             "fps": fps, "draws": draws, "primitives": primitives, "actors": inhabitants.size() + 1,
             "x": player.position.x, "y": player.position.y, "z": player.position.z, "yaw": player.yaw,
@@ -192,6 +193,8 @@ func _process(delta: float) -> void:
             "clip": player.motion_clip, "pose": player.presentation.playback.get_current_node(),
             "locomotion": CampHumanoidMotor.Locomotion.keys()[player.locomotion],
             "heading": player.travel_heading, "camera_y": player.camera.global_position.y,
+            "velocity_x": actual.x, "velocity_z": actual.z,
+            "intent_x": player.movement_intent.x, "intent_z": player.movement_intent.z,
             "move_finger": hud.touch.move_finger, "look_finger": hud.touch.look_finger,
             "dive_requested": player.dive_requested, "sky": TonsaiTerrain.SkyPreset.keys()[terrain.sky_preset],
             "startup_ms": Time.get_ticks_msec() - _started if not bool(_bridge.tonsaiMetrics) else 0,
