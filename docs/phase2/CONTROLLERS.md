@@ -33,3 +33,19 @@ and keeps the rational decay approximation, velocity state and overshoot clamp. 
 Run `bash ci/build-tonsai.sh` and `python3 tools/tonsai/review_web.py build/tonsai build/tonsai-captures` after installing the pinned Godot export template and Playwright Chromium. The native regression compares the actual camera basis for identical irregular input, tests collision and recovery, and exercises both water controllers. The browser harness records per-frame camera orientation and position, boom state, input, velocity, trajectory, timestamps and touch owners for both controllers. The capture JSON contains no private assets or player account data.
 
 Use physical iPhone Safari to compare slow and fast orbit while running and diving, then repeat alongside the cave and structures. Desktop browser behavior and software-rendering frame rates are not physical device acceptance.
+
+## 2.5 Touch 1 correction
+
+Godot 4.7.2's [Web JavaScript input bridge](https://github.com/godotengine/godot/blob/4.7.2-stable/platform/web/js/libs/library_godot_input.js) forwards the identifier and canvas-scaled absolute position from each element of `changedTouches`. The [native Web callback](https://github.com/godotengine/godot/blob/4.7.2-stable/platform/web/display_server_web.cpp) computes both relative fields against `touches[i]`. That slot can represent a different finger in the next batch, including after a finger lifts. [Issue #94346](https://github.com/godotengine/godot/issues/94346) reports this behavior. [PR #94899](https://github.com/godotengine/godot/pull/94899) proposes identifier-keyed engine history and is still open.
+
+Both controllers now consume the look finger's displacement calculated from its last viewport position. The viewport short edge supplies the matching normalization. Releases, focus loss, resize and mode transitions clear the relevant history. Unmatched drags are ignored. The history accepts the full 32-bit identifier range. [Issue #95941](https://github.com/godotengine/godot/issues/95941) reports surprising iOS IDs. The current engine forwards the browser ID, and the Web reproduction exercised large IDs successfully. Stability across active gestures on the reported iPhone still needs a trace. The original touch backend remains in use.
+
+[Issue #116465](https://github.com/godotengine/godot/issues/116465) reports mouse motion despite disabled emulation. The Web engine registers a generic `pointermove` handler for mouse motion. Tonsai's mouse orbit requires the right mouse button and rejects engine-emulated mouse events. The reproduced camera jump came from the touch drag path. Godot Web maps DOM `touchcancel` to the release callback, which clears game touch history through the release path.
+
+### Capture on iPhone
+
+1. Confirm **2.5 Touch 1** appears next to the frame counter.
+2. Open **Diagnostics** and tap **Record touch**. Reproduce the gesture for up to eight seconds, ideally holding the right thumb still while you move, lift and reengage the left thumb.
+3. Tap **Copy trace**, then **Copy** in the browser dialog. The JSON also remains available for manual selection. The trace contains input and camera measurements and stays on the device until you share it.
+
+The headless regression injects false values into both relative fields across all four controller and steering combinations. Chromium also changes the order and membership of native DOM `changedTouches` batches, verifies that the engine reports a large delta for a stationary thumb, and checks the copied trace against the applied delta.

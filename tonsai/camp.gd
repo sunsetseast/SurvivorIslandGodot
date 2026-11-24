@@ -177,6 +177,7 @@ func _physics_process(delta: float) -> void:
 func _process(delta: float) -> void:
     if not loaded:
         return
+    hud.touch.trace.frame(player)
     if _tracing and _trace.size() < 1200:
         var angles := player.camera.global_basis.get_euler()
         var velocity := player.get_real_velocity()
@@ -196,7 +197,8 @@ func _process(delta: float) -> void:
     var fps := Engine.get_frames_per_second()
     var draws := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME)
     var primitives := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME)
-    hud.stats.text = "%d FPS   %d draws   %dk tris   6 rigs" % [fps, draws, primitives / 1000]
+    hud.stats.text = "%s   %d FPS   %d draws   %dk tris   6 rigs" % [
+        CampTouch.TouchTrace.BUILD, fps, draws, primitives / 1000]
     for npc in inhabitants:
         # Distant actors keep their physical schedules. Only skeletal
         # evaluation sleeps when nobody can read the pose.
@@ -205,6 +207,7 @@ func _process(delta: float) -> void:
     if _review:
         var actual := player.get_real_velocity()
         _bridge.tonsaiMetrics = JSON.stringify({
+            "build": CampTouch.TouchTrace.BUILD,
             "fps": fps, "draws": draws, "primitives": primitives, "actors": inhabitants.size() + 1,
             "x": player.position.x, "y": player.position.y, "z": player.position.z, "yaw": player.yaw,
             "travel": player.travel_distance, "arrivals": simulation.arrivals,

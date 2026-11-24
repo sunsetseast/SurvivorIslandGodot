@@ -1,6 +1,8 @@
 class_name CampTouch
 extends Control
 
+const TouchTrace := preload("res://controllers/touch_trace.gd")
+
 var motor: CampThirdPerson
 var move_finger := -1
 var look_finger := -1
@@ -8,6 +10,8 @@ var stick_center := Vector2.ZERO
 var stick_offset := Vector2.ZERO
 var radius := 57.0
 var safe := Rect2()
+var trace := TouchTrace.new()
+var _positions: Dictionary[int, Vector2] = {}
 
 func _ready() -> void:
     mouse_filter = MOUSE_FILTER_IGNORE
@@ -41,28 +45,51 @@ func _notification(what: int) -> void:
 func _input(event: InputEvent) -> void:
     if not is_instance_valid(motor):
         return
-    if event is InputEventScreenTouch and (not event.pressed or event.canceled):
-        if event.index == move_finger:
+    if event is InputEventScreenTouch:
+        # Preserve the complete 32-bit identifier domain. -1 is reserved for no owner.
+        var id: int = event.index & 0xffffffff
+        if event.pressed and not event.canceled:
+            if _positions.has(id):
+                trace.touch("duplicate_press", id, event.position, _owner(id))
+                get_viewport().set_input_as_handled()
+                return
+            _positions[id] = event.position
+            trace.touch("press", id, event.position, "")
+            return
+        trace.touch("cancel" if event.canceled else "release", id, event.position, _owner(id))
+        _positions.erase(id)
+        if id == move_finger:
             move_finger = -1
             stick_offset = Vector2.ZERO
             stick_center = home()
             motor.touch_direction = Vector2.ZERO
             queue_redraw()
             get_viewport().set_input_as_handled()
-        elif event.index == look_finger:
+        elif id == look_finger:
             look_finger = -1
             if event.canceled:
                 motor.cancel_look()
             get_viewport().set_input_as_handled()
-    elif event is InputEventScreenDrag and not motor.locked:
-        if event.index == move_finger:
+    elif event is InputEventScreenDrag:
+        var id: int = event.index & 0xffffffff
+        if not _positions.has(id):
+            trace.drag(event, id, "", Vector2.ZERO, false)
+            return
+        # Godot Web can compute relative deltas using another changed touch's
+        # array slot. Both owners use positions in this viewport's coordinates.
+        var displacement: Vector2 = event.position - _positions[id]
+        _positions[id] = event.position
+        trace.drag(event, id, _owner(id), displacement, true)
+        if motor.locked:
+            return
+        if id == move_finger:
             stick_offset = (event.position - stick_center).limit_length(radius)
             var power := clampf((stick_offset.length() / radius - .13) / .87, 0.0, 1.0)
             motor.touch_direction = stick_offset.normalized() * power
             queue_redraw()
             get_viewport().set_input_as_handled()
-        elif event.index == look_finger:
-            motor.orbit(event.relative if motor.controller_b else event.screen_relative)
+        elif id == look_finger:
+            motor.orbit(displacement, true)
             get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -71,16 +98,21 @@ func _unhandled_input(event: InputEvent) -> void:
     # The GUI gets first refusal on new fingers. Ownership then survives
     # crossing the split or moving over a button until that finger releases.
     if event is InputEventScreenTouch and event.pressed and not event.canceled:
+        var id: int = event.index & 0xffffffff
         if event.position.x < size.x * .47 and event.position.y > size.y * .39 and move_finger < 0:
-            move_finger = event.index
+            move_finger = id
             stick_center = event.position
+            trace.touch("claim", id, event.position, "move")
             queue_redraw()
             get_viewport().set_input_as_handled()
         elif event.position.x >= size.x * .47 and look_finger < 0:
-            look_finger = event.index
+            look_finger = id
+            trace.touch("claim", id, event.position, "look")
             get_viewport().set_input_as_handled()
 
 func cancel() -> void:
+    trace.touch("clear", -1, Vector2.ZERO, "")
+    _positions.clear()
     move_finger = -1
     look_finger = -1
     stick_offset = Vector2.ZERO
@@ -88,6 +120,13 @@ func cancel() -> void:
     if is_instance_valid(motor):
         motor.clear_controls()
     queue_redraw()
+
+func _owner(id: int) -> String:
+    if id == move_finger:
+        return "move"
+    if id == look_finger:
+        return "look"
+    return ""
 
 func _draw() -> void:
     if is_instance_valid(motor) and motor.locked:

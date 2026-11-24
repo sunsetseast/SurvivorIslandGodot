@@ -37,6 +37,7 @@ var _stick_active := false
 var _stick_yaw := 0.0
 var _stick_follows_camera := false
 var _pending_look := Vector2.ZERO
+var _pending_look_fraction := Vector2.ZERO
 var _reset_requested := false
 var _camera_distance := CAMERA_DISTANCE
 var _camera_blocked := false
@@ -69,16 +70,23 @@ func _ready() -> void:
     pivot.rotation = Vector3(pitch, yaw, 0)
     set_heading(PI + yaw)
 
-func orbit(relative: Vector2) -> void:
-    if locked:
+func orbit(relative: Vector2, viewport_space: bool) -> void:
+    if locked or relative.is_zero_approx():
         return
+    var viewport_size := get_viewport().get_visible_rect().size
+    var size := viewport_size if viewport_space else Vector2(DisplayServer.window_get_size())
+    var short_edge := minf(size.x, size.y)
+    if short_edge <= 1.0:
+        short_edge = maxf(1.0, minf(viewport_size.x, viewport_size.y))
     _pending_look += relative
+    _pending_look_fraction += relative / short_edge
 
 func reset_camera() -> void:
     _reset_requested = not locked
 
 func cancel_look() -> void:
     _pending_look = Vector2.ZERO
+    _pending_look_fraction = Vector2.ZERO
 
 func clear_controls() -> void:
     touch_direction = Vector2.ZERO
@@ -121,24 +129,17 @@ func _apply_look() -> void:
         pitch = DEFAULT_PITCH
         _reset_requested = false
         _orbit_steers = false
-    # Unscaled drag deltas and the backing window share the same units.
-    # B uses viewport-space deltas and the same viewport's short edge.
-    var screen := get_viewport().get_visible_rect().size if controller_b else Vector2(DisplayServer.window_get_size())
-    var short_edge := minf(screen.x, screen.y)
-    if short_edge <= 1.0:
-        var viewport := get_viewport().get_visible_rect().size
-        short_edge = maxf(1.0, minf(viewport.x, viewport.y))
-    var radians_per_pixel := LOOK_RADIANS_PER_SHORT_EDGE * sensitivity / short_edge
+    var radians := _pending_look_fraction * LOOK_RADIANS_PER_SHORT_EDGE * sensitivity
     raw_look = _pending_look
     if not raw_look.is_zero_approx():
         last_swipe = raw_look
-    yaw -= _pending_look.x * radians_per_pixel
+    yaw -= radians.x
     if not controller_b:
         yaw = wrapf(yaw, -PI, PI)
-    elif not is_zero_approx(_pending_look.x):
+    elif not is_zero_approx(radians.x):
         _orbit_steers = true
-    pitch = clampf(pitch - _pending_look.y * radians_per_pixel * .87, -1.0, .70 if underwater() else .42)
-    _pending_look = Vector2.ZERO
+    pitch = clampf(pitch - radians.y * .87, -1.0, .70 if underwater() else .42)
+    cancel_look()
 
 func _movement_yaw(delta: float) -> float:
     if not controller_b:
@@ -251,7 +252,7 @@ func _steer_planar(input: Vector3, speed: float, acceleration: float, braking: f
 func _unhandled_input(event: InputEvent) -> void:
     if event is InputEventMouseMotion and event.device != InputEvent.DEVICE_ID_EMULATION:
         if event.button_mask & MOUSE_BUTTON_MASK_RIGHT:
-            orbit(event.relative if controller_b else event.screen_relative)
+            orbit(event.relative if controller_b else event.screen_relative, controller_b)
     elif event is InputEventKey and event.pressed and not event.echo:
         if event.physical_keycode == KEY_R:
             reset_camera()

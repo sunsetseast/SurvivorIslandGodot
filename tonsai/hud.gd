@@ -15,6 +15,7 @@ var sensitivity_button: Button
 var steering_button: Button
 var controller_button: Button
 var diagnostics_button: Button
+var trace_button: Button
 var diagnostics: Label
 var stats: Label
 var dialog: PanelContainer
@@ -22,6 +23,7 @@ var speaker: Label
 var reply: Label
 var topics: Array[Button] = []
 var close_button: Button
+var _trace_ready := false
 
 func _ready() -> void:
     set_anchors_and_offsets_preset(PRESET_FULL_RECT)
@@ -55,6 +57,9 @@ func _ready() -> void:
     add_child(controller_button)
     diagnostics_button = _button("Diagnostics", _toggle_diagnostics)
     add_child(diagnostics_button)
+    trace_button = _button("Record touch", _toggle_touch_trace)
+    trace_button.hide()
+    add_child(trace_button)
     diagnostics = _label("", 16)
     diagnostics.hide()
     add_child(diagnostics)
@@ -101,6 +106,7 @@ func _layout() -> void:
     steering_button.position = reset_button.position + Vector2(0, 58)
     controller_button.position = sensitivity_button.position + Vector2(0, 58)
     diagnostics_button.position = controller_button.position + Vector2(0, 58)
+    trace_button.position = diagnostics_button.position + Vector2(157, 0)
     diagnostics.position = safe.position + Vector2(0, 76)
     nearby_button.position = Vector2(safe.end.x - 147, safe.end.y - 112)
     var width := minf(445.0, safe.size.x - 24.0)
@@ -195,6 +201,64 @@ func select_controller(use_b: bool) -> void:
 
 func _toggle_diagnostics() -> void:
     diagnostics.visible = not diagnostics.visible
+    trace_button.visible = diagnostics.visible
+
+func _toggle_touch_trace() -> void:
+    if not _trace_ready:
+        touch.trace.start(camp.player)
+        _trace_ready = true
+        trace_button.text = "Copy trace"
+        return
+    var report := touch.trace.finish()
+    _trace_ready = false
+    trace_button.text = "Record touch"
+    touch.cancel()
+    if not OS.has_feature("web"):
+        DisplayServer.clipboard_set(report)
+        return
+    # A native button gives Safari a trusted tap for writing the clipboard.
+    # The text remains selectable if clipboard access is unavailable.
+    JavaScriptBridge.eval("""
+        (text => {
+            const dialog = document.createElement("dialog");
+            dialog.setAttribute("aria-label", "Touch diagnostic trace");
+            dialog.style.cssText = "width:min(36rem,90vw);box-sizing:border-box;max-height:85dvh;color:#eef4ef;background:#152830;border:1px solid #93ada5;border-radius:8px;font:16px system-ui;padding:16px";
+            const tip = document.createElement("p");
+            tip.textContent = "Touch diagnostic trace";
+            tip.style.marginTop = "0";
+            const field = document.createElement("textarea");
+            field.setAttribute("aria-label", "Trace JSON");
+            field.value = text;
+            field.readOnly = true;
+            field.style.cssText = "width:100%%;height:28vh;box-sizing:border-box;font-size:16px";
+            const copy = document.createElement("button");
+            copy.textContent = "Copy";
+            copy.autofocus = true;
+            const close = document.createElement("button");
+            close.textContent = "Close";
+            for (const button of [copy, close]) {
+                button.style.cssText = "min-height:44px;margin:8px 8px 0 0;padding:0 16px;font:inherit";
+            }
+            copy.addEventListener("click", async () => {
+                try {
+                    await navigator.clipboard.writeText(text);
+                    tip.textContent = "Trace copied";
+                } catch {
+                    field.focus();
+                    field.select();
+                    tip.textContent = "Select the trace text and use Copy";
+                }
+            });
+            close.addEventListener("click", () => dialog.close());
+            dialog.addEventListener("close", () => {
+                dialog.remove();
+                document.querySelector("canvas")?.focus();
+            });
+            dialog.append(tip, field, copy, close);
+            document.body.append(dialog);
+            dialog.showModal();
+        })(%s)
+    """ % JSON.stringify(report), true)
 
 func refresh_diagnostics(frame_delta: float) -> void:
     if not diagnostics.visible:
@@ -226,7 +290,7 @@ func control_positions() -> Dictionary:
             ["topic", topics[0]], ["close", close_button], ["dive", dive_button],
             ["sky", sky_button], ["reset", reset_button], ["sensitivity", sensitivity_button],
             ["steering", steering_button], ["controller", controller_button],
-            ["diagnostics", diagnostics_button]]:
+            ["diagnostics", diagnostics_button], ["touch_trace", trace_button]]:
         var center: Vector2 = entry[1].get_global_rect().get_center() / viewport_size
         controls[entry[0]] = [center.x, center.y]
     var home := touch.home() / viewport_size
