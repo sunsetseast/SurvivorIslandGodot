@@ -34,7 +34,7 @@ jobs:
       - name: Install Chromium headless shell
         run: |
           python3 -m pip install playwright==1.62.0
-          python3 -m playwright install --with-deps chromium --only-shell
+          python3 -m playwright install chromium --only-shell
       - name: Exercise landscape touch and capture the Web character
         run: python3 character_lab/tools/review_web.py build/character-lab build/character-lab-captures
       - uses: actions/upload-artifact@v4
