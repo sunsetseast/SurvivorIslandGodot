@@ -21,5 +21,10 @@ renderer/rendering_method.mobile="gl_compatibility"
 textures/default_filters/use_nearest_mipmap_filter=false
 environment/defaults/default_clear_color=Color(0.51, 0.73, 0.84, 1)
 
+[navigation]
+3d/default_cell_size=0.2
+3d/default_cell_height=0.1
+3d/merge_rasterizer_cell_scale=0.2
+
 [physics]
 3d/default_gravity=18.0

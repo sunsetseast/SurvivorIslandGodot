@@ -1,0 +1,21 @@
+{
+  "game/world.ts": "37136f494fe4f285c0cf8245476f968dd138a997280b88c95b5583daa1f1b7c1",
+  "game/environment/geography.ts": "9b449f8acc851eb1960eab7151446f5df1890cf98cfcc0d9ea47b32f1032cb13",
+  "game/environment/forest.ts": "a2c701edabf4fcf30cca11208a7bf772474e7e1da8b7c1e0e821b391dd54a123",
+  "game/environment/composition.ts": "036383705e19265baca237263cbcb35907392242d4d70d2bc5a6e9cabdd964aa",
+  "game/environment/hidingSpots.ts": "3389416931ea3acd156b23ced68506e6fdd03056eb94d8c6254ab43628ce1fef",
+  "game/environment/rockCollision.json": "1b957ccfc1f2ed3aaca828da0fd49c8414756d2ab4c2b9c69f717e86baefc55f",
+  "game/environment/candidate-surfaces.json": "32277c741e4aa714211ab7b86a9fc410c473f61ab78de94381b236f68e96d8fe",
+  "assets/camp/reconstruction-low.glb": "bf86bc6959810ce5df5e96ce9a01f3d3e400e8ee04264e028cefd2d14e43e90b",
+  "assets/camp/landmarks-low.glb": "3289367efd4c6458929365b73dec55a214827c3ccc75f3272a1ab11f9b633f22",
+  "assets/camp/limestone.glb": "62773febc4667ed89b2660aaa28de1e270d60f256d9e7f19758bb4ae635f5332",
+  "assets/camp/coastal-tree.glb": "648eec872550a4772cd66a34acc2f22afa5257e1bb5ca3469464a219159bcd46",
+  "assets/camp/palms.glb": "ae34f2b8604f61b1ae3106c415886492bd6f0bb3ab4a2809dc460cb325b0c5e3",
+  "assets/tonsai/fern_02.glb": "60225b180fa10ae741fd94f32256924e5fda203cb382f729e8188578cc98fa4f",
+  "assets/camp/sand_02-diff.jpg": "9d61fa24eff5c9b3abaa5c4a747956e5259bcbcc2138bc10259a184ea85e2c86",
+  "assets/camp/brown_mud_leaves_01-diff.jpg": "4dd6d554883c499b9d86d31592af0d96de92a617de100bd8ec281c2cb0310311",
+  "assets/tonsai/rock_06_diff_1k.jpg": "0f9f0fc0438f99cdd9e33cfadc9ba01c527f74c1085fdac425e06e6a808a7736",
+  "assets/camp/tropical-clouds.png": "606f3ed8e5b5980e32f9c2a80d2a4cd3dfc2333096a2c05ff73fbc94902809ab",
+  "assets/camp/provenance.json": "26db2fb114dd0da09c6ffe072a642c98bdbc2dbfba372f1f5fd16297e494feec",
+  "assets/tonsai/coastal-manifest.json": "4b4baaec37b56da5fd0ab533941a13fafca9b612132623719e9f65b3ed06a7f5"
+}
