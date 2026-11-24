@@ -7,6 +7,8 @@ const LOOK_RADIANS_PER_SHORT_EDGE := 2.07
 # Thresholds apply after the touch HUD's radial dead zone.
 const STICK_ENGAGE := .08
 const STICK_NEUTRAL := .03
+const CAMERA_STEER_RATE := 1.65
+const MobileOrbit := preload("res://controllers/mobile_orbit_camera.gd")
 
 var pivot: Node3D
 var camera: Camera3D
@@ -14,6 +16,9 @@ var yaw := .48
 var pitch := DEFAULT_PITCH
 var sensitivity := 1.0
 var camera_relative_steering := false
+var controller_b := false
+var raw_look := Vector2.ZERO
+var last_swipe := Vector2.ZERO
 var touch_direction := Vector2.ZERO:
     set(value):
         touch_direction = value.limit_length()
@@ -22,7 +27,7 @@ var touch_direction := Vector2.ZERO:
             _stick_active = false
         elif not _stick_active and strength >= STICK_ENGAGE:
             _stick_active = true
-            _stick_yaw = yaw
+            _stick_yaw = rendered_yaw()
             _stick_follows_camera = camera_relative_steering
 var run_toggled := false
 var locked := false
@@ -35,6 +40,9 @@ var _pending_look := Vector2.ZERO
 var _reset_requested := false
 var _camera_distance := CAMERA_DISTANCE
 var _camera_probe := PhysicsShapeQueryParameters3D.new()
+var _mobile_orbit: MobileOrbit
+var _previous_rendered_yaw := 0.0
+var _orbit_steers := false
 
 func _ready() -> void:
     collision_layer = 2
@@ -42,6 +50,7 @@ func _ready() -> void:
     super()
     pivot = Node3D.new()
     pivot.name = "OrbitPivot"
+    pivot.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
     pivot.position.y = 1.43
     add_child(pivot)
     var probe := SphereShape3D.new()
@@ -76,38 +85,120 @@ func clear_controls() -> void:
     cancel_look()
     _reset_requested = false
     run_toggled = false
+    _orbit_steers = false
+    if controller_b:
+        # Focus loss must not replay a queued orbit on resume.
+        yaw = _mobile_orbit.rendered_yaw
+        pitch = _mobile_orbit.rendered_pitch
+        _mobile_orbit.sync(yaw, pitch, pivot.global_position.y - global_position.y, camera.position.z)
 
 func _physics_process(delta: float) -> void:
+    if not controller_b:
+        _apply_look()
+    var previous := global_position
+    var input := _local_input()
+    movement_intent = Vector3(input.x, 0, input.y).rotated(Vector3.UP, _movement_yaw(delta))
+    walk_direction(movement_intent, run_toggled or Input.is_physical_key_pressed(KEY_SHIFT), delta,
+        not locked, sin(pitch) * maxf(0.0, -input.y))
+    travel_distance += Vector2(global_position.x - previous.x, global_position.z - previous.z).length()
+    if not controller_b:
+        _update_camera(delta)
+
+func _process(delta: float) -> void:
+    if not controller_b:
+        return
+    _apply_look()
+    var body_position := get_global_transform_interpolated().origin
+    var surface := water.level if locomotion != Locomotion.LAND else -INF
+    _mobile_orbit.update(body_position, _focus_height(body_position.y), yaw, pitch, delta,
+        CAMERA_DISTANCE, surface, underwater())
+
+func _apply_look() -> void:
     if _reset_requested:
-        yaw = wrapf(travel_heading + PI, -PI, PI)
+        yaw = rendered_yaw() + angle_difference(rendered_yaw(), travel_heading + PI) if controller_b \
+            else wrapf(travel_heading + PI, -PI, PI)
         pitch = DEFAULT_PITCH
         _reset_requested = false
+        _orbit_steers = false
     # Unscaled drag deltas and the backing window share the same units.
-    var screen := DisplayServer.window_get_size()
+    # B uses viewport-space deltas and the same viewport's short edge.
+    var screen := get_viewport().get_visible_rect().size if controller_b else Vector2(DisplayServer.window_get_size())
     var short_edge := minf(screen.x, screen.y)
     if short_edge <= 1.0:
         var viewport := get_viewport().get_visible_rect().size
         short_edge = maxf(1.0, minf(viewport.x, viewport.y))
     var radians_per_pixel := LOOK_RADIANS_PER_SHORT_EDGE * sensitivity / short_edge
-    yaw = wrapf(yaw - _pending_look.x * radians_per_pixel, -PI, PI)
+    raw_look = _pending_look
+    if not raw_look.is_zero_approx():
+        last_swipe = raw_look
+    yaw -= _pending_look.x * radians_per_pixel
+    if not controller_b:
+        yaw = wrapf(yaw, -PI, PI)
+    elif not is_zero_approx(_pending_look.x):
+        _orbit_steers = true
     pitch = clampf(pitch - _pending_look.y * radians_per_pixel * .87, -1.0, .70 if underwater() else .42)
     _pending_look = Vector2.ZERO
-    var previous := global_position
-    var input := _local_input()
-    var movement_yaw := _stick_yaw if _stick_active and not _stick_follows_camera else yaw
-    movement_intent = Vector3(input.x, 0, input.y).rotated(Vector3.UP, movement_yaw)
-    walk_direction(movement_intent, run_toggled or Input.is_physical_key_pressed(KEY_SHIFT), delta,
-        not locked, sin(pitch) * maxf(0.0, -input.y))
-    travel_distance += Vector2(global_position.x - previous.x, global_position.z - previous.z).length()
-    _update_camera(delta)
+
+func _movement_yaw(delta: float) -> float:
+    if not controller_b:
+        return _stick_yaw if _stick_active and not _stick_follows_camera else yaw
+    var view := rendered_yaw()
+    var increment := view - _previous_rendered_yaw
+    _previous_rendered_yaw = view
+    if not _stick_active:
+        return view
+    if _stick_follows_camera and _orbit_steers:
+        # Slow orbits steer continuously. Large swipes nudge the bearing and
+        # discard the excess, so a fast glance cannot build a steering backlog.
+        var limit := CAMERA_STEER_RATE * delta
+        _stick_yaw += clampf(increment, -limit, limit)
+    return _stick_yaw
+
+func rendered_yaw() -> float:
+    return _mobile_orbit.rendered_yaw if controller_b else yaw
+
+func camera_obstructed() -> bool:
+    return _mobile_orbit.obstructed if controller_b else _camera_distance < CAMERA_DISTANCE - .01
+
+func select_controller(use_b: bool) -> void:
+    if controller_b == use_b:
+        return
+    var view := rendered_yaw()
+    var view_pitch := pitch if not controller_b else _mobile_orbit.rendered_pitch
+    var height := pivot.global_position.y - global_position.y
+    controller_b = use_b
+    yaw = view if use_b else wrapf(view, -PI, PI)
+    pitch = view_pitch
+    pivot.top_level = use_b
+    physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_ON if use_b else Node.PHYSICS_INTERPOLATION_MODE_OFF
+    reset_physics_interpolation()
+    if use_b:
+        if _mobile_orbit == null:
+            _mobile_orbit = MobileOrbit.new()
+            _mobile_orbit.setup(pivot, camera, CAMERA_DISTANCE)
+        _mobile_orbit.sync(yaw, pitch, height, camera.position.z)
+        _previous_rendered_yaw = yaw
+    else:
+        pivot.position = Vector3.UP * height
+        pivot.rotation = Vector3(pitch, yaw, 0)
+        _camera_distance = camera.position.z
+
+func sync_camera() -> void:
+    reset_physics_interpolation()
+    if controller_b:
+        _mobile_orbit.sync(yaw, pitch, _focus_height(global_position.y), CAMERA_DISTANCE)
+        _previous_rendered_yaw = yaw
+
+func _focus_height(body_y: float) -> float:
+    if underwater():
+        return 1.06
+    if swimming():
+        return maxf(1.35, water.level - body_y + .47)
+    return 1.43
 
 func _update_camera(delta: float) -> void:
-    var focus_height := 1.43
+    var focus_height := _focus_height(global_position.y)
     var camera_pitch := pitch
-    if underwater():
-        focus_height = 1.06
-    elif swimming():
-        focus_height = maxf(1.35, water.level - global_position.y + .47)
     pivot.position.y = lerpf(pivot.position.y, focus_height, 1.0 - exp(-delta * 11.0))
     if locomotion != Locomotion.LAND and not underwater():
         var clearance := global_position.y + pivot.position.y - water.level - .21
@@ -158,7 +249,7 @@ func _steer_planar(input: Vector3, speed: float, acceleration: float, braking: f
 func _unhandled_input(event: InputEvent) -> void:
     if event is InputEventMouseMotion and event.device != InputEvent.DEVICE_ID_EMULATION:
         if event.button_mask & MOUSE_BUTTON_MASK_RIGHT:
-            orbit(event.screen_relative)
+            orbit(event.relative if controller_b else event.screen_relative)
     elif event is InputEventKey and event.pressed and not event.echo:
         if event.physical_keycode == KEY_R:
             reset_camera()

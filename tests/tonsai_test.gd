@@ -18,6 +18,8 @@ func _ticks(count: int) -> void:
 func _test() -> void:
     camp = load("res://tonsai/camp.tscn").instantiate()
     root.add_child(camp)
+    if camp.loaded:
+        camp.hud.select_controller(false)
     await _ticks(18)
     if not camp.loaded:
         printerr("FAIL: Tonsai did not load")
@@ -77,6 +79,7 @@ func _test() -> void:
     await _test_water()
     _test_props()
     await _test_movement_intent()
+    await _test_camera_comparison()
     print("Tonsai result: ", camp.player.travel_distance, " m continuously walked; ",
         camp.simulation.arrivals, " NPC arrivals; ", failures, " failures")
     quit(int(failures > 0))
@@ -158,6 +161,12 @@ func _test_dive() -> void:
     _check(player.position.x >= TonsaiTerrain.OFFSHORE_EDGE, "Diver crossed the boundary")
     _check(player.position.y > camp.site.height(player.position.x, player.position.z),
         "Diver clipped into the seabed")
+    if player.controller_b:
+        var deep_y := player.position.y
+        player.pitch = .52
+        await _ticks(70)
+        _check(player.underwater() and player.position.y > deep_y + .35,
+            "Pitch-driven ascent did not preserve the underwater state")
     player.touch_direction = Vector2.ZERO
     player.toggle_dive()
     await _ticks(165)
@@ -220,7 +229,153 @@ func _drag(index: int, where: Vector2, screen_delta: Vector2) -> void:
     event.index = index
     event.position = where
     event.screen_relative = screen_delta
+    event.relative = screen_delta
     root.push_input(event, true)
+
+func _test_camera_comparison() -> void:
+    var player := camp.player
+    var touch := camp.hud.touch
+    var origin := Vector3(500, .05, 500)
+    var left := touch.home()
+    var right := root.get_visible_rect().size * Vector2(.69, .51)
+    var measured_steps: Array[float] = []
+    camp.hud.steering_button.pressed.emit() # Return to intent-preserving steering.
+    player.water = CampWaterSurface.new(0.0, func(_x: float, _z: float) -> float: return 0.0)
+    for use_b: bool in [false, true]:
+        camp.hud.select_controller(use_b)
+        player.position = origin
+        player.velocity = Vector3.ZERO
+        player.planar = Vector3.ZERO
+        player.yaw = 0.0
+        player.pitch = -.31
+        player.set_heading(PI)
+        player.sync_camera()
+        await _ticks(8)
+        player.run_toggled = true
+        _press(1, left)
+        _drag(1, left + Vector2.UP * touch.radius, Vector2.ZERO)
+        await _ticks(36)
+        _press(2, right)
+        var window := DisplayServer.window_get_size()
+        var short_edge := root.get_visible_rect().size.y if use_b else minf(window.x, window.y)
+        if short_edge <= 1.0:
+            short_edge = root.get_visible_rect().size.y
+        var pixels := short_edge / CampThirdPerson.LOOK_RADIANS_PER_SHORT_EDGE
+        var previous := player.camera.global_basis.get_euler()
+        var max_step := 0.0
+        var swept := 0.0
+        # Batched and alternating delivery, full clockwise orbit, and vertical input.
+        for frame in 56:
+            if frame in [0, 4, 5, 12, 16, 21]:
+                var step: float = [-1.2, .6, -1.68, -1.4, -1.4, -(TAU - 5.08)][[0, 4, 5, 12, 16, 21].find(frame)]
+                _drag(2, right, Vector2(step * pixels, .35 * pixels if frame == 4 else 0.0))
+            await _ticks(1)
+            var angles := player.camera.global_basis.get_euler()
+            var separation := angle_difference(previous.y, angles.y)
+            swept += separation
+            max_step = maxf(max_step, absf(separation))
+            previous = angles
+            var actual := player.get_real_velocity() * Vector3(1, 0, 1)
+            _check(actual.normalized().dot(Vector3.FORWARD) > .995, "Camera comparison redirected held run")
+        _check(absf(swept - TAU) < .03 and previous.x < -.5,
+            "Camera comparison lost a full rotation or vertical drag")
+        measured_steps.append(max_step)
+        print("Camera ", "B" if use_b else "A", " maximum rendered step ", rad_to_deg(max_step), " deg")
+        _press(2, right, false)
+        _press(1, left, false)
+        await _ticks(6)
+    _check(measured_steps[1] < measured_steps[0] * .68, "B did not smooth batched camera updates")
+
+    # The exact same capsule and room geometry are used for both cameras.
+    var wall := StaticBody3D.new()
+    var collision := CollisionShape3D.new()
+    var box := BoxShape3D.new()
+    box.size = Vector3(6.0, 4.0, .25)
+    collision.shape = box
+    wall.add_child(collision)
+    wall.position = origin + Vector3(0, 1.0, 1.9)
+    camp.add_child(wall)
+    for use_b: bool in [false, true]:
+        camp.hud.select_controller(use_b)
+        player.position = origin
+        player.planar = Vector3.ZERO
+        player.yaw = 0.0
+        player.pitch = -.31
+        player.sync_camera()
+        await _ticks(12)
+        _check(player.camera_obstructed() and player.camera.global_position.z < wall.position.z - .15,
+            "Camera crossed a wall during comparison")
+    var shortened := player.camera.position.z
+    wall.queue_free()
+    await _ticks(5)
+    _check(player.camera.position.z < shortened + .5, "B snapped outward after clearing the wall")
+    await _ticks(55)
+    _check(player.camera.position.z > 4.1 and not player.camera_obstructed(), "B did not recover boom distance")
+    camp.hud.steering_button.pressed.emit()
+    _press(1, left)
+    _drag(1, left + Vector2.UP * touch.radius, Vector2.ZERO)
+    await _ticks(32)
+    var heading := player.travel_heading
+    var before := player.position
+    _press(2, right)
+    var edge := root.get_visible_rect().size.y
+    _drag(2, right, Vector2(edge * .95, 0))
+    await _ticks(34)
+    _check(absf(angle_difference(heading, player.travel_heading)) < PI / 2 and player.position.z < before.z,
+        "B camera steering chased a fast glance")
+    _press(2, right, false)
+    var held := player.movement_intent.normalized()
+    await _ticks(15)
+    _check(player.movement_intent.normalized().dot(held) > .99, "B camera steering caught up after release")
+    _press(2, right)
+    var slow_turn_start := player.travel_heading
+    for frame in 30:
+        _drag(2, right, Vector2(edge * .006, 0))
+        await _ticks(1)
+    _check(angle_difference(slow_turn_start, player.travel_heading) < -.22,
+        "B camera steering ignored a sustained slow orbit")
+    var switch_position := player.position
+    camp.hud.select_controller(false)
+    _check(player.position == switch_position and touch.move_finger == -1 and touch.look_finger == -1,
+        "Controller swap moved the player or kept old touches")
+    camp.hud.select_controller(true)
+    camp.hud.steering_button.pressed.emit()
+    player.run_toggled = false
+    player.planar = Vector3.ZERO
+    player.velocity = Vector3.ZERO
+    player.water = camp.terrain.water
+    await _test_water()
+    await _test_cave_orbit()
+
+func _test_cave_orbit() -> void:
+    var player := camp.player
+    var right := root.get_visible_rect().size * Vector2(.70, .51)
+    for use_b: bool in [false, true]:
+        camp.hud.select_controller(use_b)
+        player.position = camp.site.ground(11, 105) + Vector3.UP * .06
+        player.velocity = Vector3.ZERO
+        player.planar = Vector3.ZERO
+        player.yaw = 0.0
+        player.pitch = -.08
+        player.sync_camera()
+        await _ticks(10)
+        _press(2, right)
+        var edge := root.get_visible_rect().size.y
+        if not use_b:
+            var window := DisplayServer.window_get_size()
+            if minf(window.x, window.y) > 1.0:
+                edge = minf(window.x, window.y)
+        var blocked := false
+        for step in 44:
+            _drag(2, right, Vector2(edge * .054, 0))
+            await _ticks(2)
+            blocked = blocked or player.camera_obstructed()
+            var ray := PhysicsRayQueryParameters3D.create(player.pivot.global_position,
+                player.camera.global_position, 1)
+            _check(player.get_world_3d().direct_space_state.intersect_ray(ray).is_empty(),
+                "Cave orbit placed the camera behind geometry")
+        _check(blocked, "Cave orbit did not exercise an obstruction")
+        _press(2, right, false)
 
 func _test_movement_intent() -> void:
     var player := camp.player

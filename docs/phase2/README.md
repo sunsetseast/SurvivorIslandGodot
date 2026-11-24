@@ -47,6 +47,8 @@ The Tonsai workflow uploads `survivor-island-tonsai-web` rather than deploying. 
 
 ### iPhone 17 Pro Max
 
+The [Phase 2.5 controller comparison](CONTROLLERS.md) describes the A/B switch, diagnostics, source evaluation and reproduction steps.
+
 1. Open the authorized HTTPS preview in Safari, turn off orientation lock, and rotate to landscape.
 2. Talk to the nearby contestant, pick a question and close the dialogue. Tap Walk to switch to running. Hold the left stick forward and swipe quickly in both directions with the right thumb. The character should keep its travel direction as the view rotates. Return the stick to center and push forward again to travel relative to the new view. Tap **Steer: Stick** to select **Steer: Camera**, which applies from the next stick gesture.
 3. Walk up the shelter ramp, then follow the trail east to freshwater. Follow the beach south to the cave. Watch for wall clipping, stuck NPCs, or animation sliding.

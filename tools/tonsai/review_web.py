@@ -58,22 +58,6 @@ def exercise(page, captures):
     page.screenshot(path=captures / "explore.png")
     cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
     until(page, lambda m: m["clip"] == "Idle", "Motion persisted after releasing the stick")
-    tap(page, "quality")
-    page.wait_for_timeout(550)
-    economy = [metrics(page)]
-    for _ in range(4):
-        page.wait_for_timeout(400)
-        economy.append(metrics(page))
-    tap(page, "quality")
-    page.wait_for_timeout(550)
-    full = [metrics(page)]
-    for _ in range(4):
-        page.wait_for_timeout(400)
-        full.append(metrics(page))
-    return {
-        name: {metric: median(entry[metric] for entry in samples) for metric in ("fps", "draws", "primitives")}
-        for name, samples in (("economy", economy), ("full", full))
-    }
 
 
 def signed_turn(start, end):
@@ -103,6 +87,7 @@ def sustained_touch(page, captures):
     worst_heading_error = 0.0
     min_velocity_alignment = 1.0
     dispatch("touchStart", left, right)
+    page.evaluate("window.tonsaiView('trace-start')")
     # Cross the original split with the look finger while the left stick
     # remains held and reverse the swipe repeatedly.
     for fraction in (.89, .66, .42, .30, .61, .86):
@@ -125,14 +110,41 @@ def sustained_touch(page, captures):
         worst_drift = max(worst_drift, abs(dx * forward_z - dz * forward_x))
     assert state["travel"] > start["travel"] + .8, state
     assert min_velocity_alignment > .98 and worst_heading_error < .08 and worst_drift < .15, state
-    page.screenshot(path=captures / "held-forward-orbit.png")
+    controller = state["controller"]
+    page.screenshot(path=captures / f"held-forward-orbit-{controller}.png")
     dispatch("touchCancel")
     until(page, lambda m: m["move_finger"] == m["look_finger"] == -1, "Canceled fingers stayed active")
+    page.evaluate("window.tonsaiView('trace-stop')")
+    trace = page.evaluate("JSON.parse(window.tonsaiTrace)")
+    columns = ("dt", "target_yaw", "target_pitch", "view_yaw", "view_pitch",
+               "x", "y", "z", "vx", "vz", "heading", "boom", "obstructed", "swipe_x", "swipe_y",
+               "camera_x", "camera_y", "camera_z", "move_finger", "look_finger", "intent_x", "intent_z", "time_usec")
+    assert len(trace) >= 6
+    assert all(len(frame) == len(columns) for frame in trace)
+    (captures / f"camera-frames-{controller}.json").write_text(
+        json.dumps({"columns": columns, "frames": trace}, separators=(",", ":")) + "\n"
+    )
     return {
         "min_velocity_alignment": min_velocity_alignment,
         "max_heading_error_rad": worst_heading_error,
         "max_cross_track_drift_m": worst_drift,
+        "max_rendered_yaw_step_rad": max(abs(signed_turn(a[3], b[3])) for a, b in zip(trace, trace[1:])),
+        "median_frame_ms": median(b[-1] - a[-1] for a, b in zip(trace, trace[1:])) / 1000,
+        "obstructed_frames": sum(row[12] for row in trace),
     }
+
+
+def measure_quality(page):
+    results = {}
+    for name in ("full", "economy"):
+        values = []
+        for _ in range(3):
+            page.wait_for_timeout(450)
+            values.append(metrics(page))
+        results[name] = {key: median(value[key] for value in values) for key in ("fps", "draws", "primitives")}
+        tap(page, "quality")
+        until(page, lambda m: m["economy"] == (name == "full"), "Quality switch did not apply")
+    return results
 
 
 def swim(page, captures):
@@ -186,8 +198,16 @@ def main():
         page.wait_for_function("Boolean(window.tonsaiMetrics)", timeout=50000)
         startup = round(monotonic() - now, 2)
         page.screenshot(path=config.captures / "spawn.png")
-        performance = exercise(page, config.captures)
-        steering = sustained_touch(page, config.captures)
+        exercise(page, config.captures)
+        steering = {}
+        performance = {}
+        for name in ("A", "B"):
+            tap(page, "controller")
+            until(page, lambda m: m["controller"] == name, f"Could not switch to controller {name}")
+            steering[name] = sustained_touch(page, config.captures)
+            page.evaluate("window.tonsaiView('shore-start')")
+            until(page, lambda m: -54.2 < m["x"] < -53.8, "Could not reset performance viewpoint")
+            performance[name] = measure_quality(page)
         swim(page, config.captures)
         for view in ("coast", "camp", "shelter", "jungle", "well", "cave", "cave-interior", "fire"):
             page.evaluate("view => window.tonsaiView(view)", view)

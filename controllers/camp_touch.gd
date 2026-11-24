@@ -62,7 +62,7 @@ func _input(event: InputEvent) -> void:
             queue_redraw()
             get_viewport().set_input_as_handled()
         elif event.index == look_finger:
-            motor.orbit(event.screen_relative)
+            motor.orbit(event.relative if motor.controller_b else event.screen_relative)
             get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:

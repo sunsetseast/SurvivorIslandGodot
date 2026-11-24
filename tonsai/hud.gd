@@ -13,6 +13,9 @@ var quality_button: Button
 var reset_button: Button
 var sensitivity_button: Button
 var steering_button: Button
+var controller_button: Button
+var diagnostics_button: Button
+var diagnostics: Label
 var stats: Label
 var dialog: PanelContainer
 var speaker: Label
@@ -48,6 +51,13 @@ func _ready() -> void:
     add_child(sensitivity_button)
     steering_button = _button("Steer: Stick", _toggle_steering)
     add_child(steering_button)
+    controller_button = _button("Controller B", func() -> void: select_controller(not camp.player.controller_b))
+    add_child(controller_button)
+    diagnostics_button = _button("Diagnostics", _toggle_diagnostics)
+    add_child(diagnostics_button)
+    diagnostics = _label("", 16)
+    diagnostics.hide()
+    add_child(diagnostics)
     dialog = PanelContainer.new()
     var card := StyleBoxFlat.new()
     card.bg_color = Color("#152830ed")
@@ -89,6 +99,9 @@ func _layout() -> void:
     dive_button.position = run_button.position
     sky_button.position = quality_button.position + Vector2(0, 58)
     steering_button.position = reset_button.position + Vector2(0, 58)
+    controller_button.position = sensitivity_button.position + Vector2(0, 58)
+    diagnostics_button.position = controller_button.position + Vector2(0, 58)
+    diagnostics.position = safe.position + Vector2(0, 76)
     nearby_button.position = Vector2(safe.end.x - 147, safe.end.y - 112)
     var width := minf(445.0, safe.size.x - 24.0)
     dialog.custom_minimum_size.x = width
@@ -172,12 +185,39 @@ func _toggle_steering() -> void:
     player.camera_relative_steering = not player.camera_relative_steering
     steering_button.text = "Steer: Camera" if player.camera_relative_steering else "Steer: Stick"
 
+func select_controller(use_b: bool) -> void:
+    var player := camp.player
+    var running := player.run_toggled
+    touch.cancel()
+    player.select_controller(use_b)
+    player.run_toggled = running
+    controller_button.text = "Controller B" if use_b else "Controller A"
+
+func _toggle_diagnostics() -> void:
+    diagnostics.visible = not diagnostics.visible
+
+func refresh_diagnostics(frame_delta: float) -> void:
+    if not diagnostics.visible:
+        return
+    var player := camp.player
+    var angles := player.camera.global_basis.get_euler()
+    var format := ("Touches %d / %d    Swipe %s\nTarget %.1f° / %.1f°    View %.1f° / %.1f°\n"
+        + "Intent %s\nVelocity %s    Heading %.1f°\nBoom %.2f m    %s    %.1f ms")
+    diagnostics.text = format % [touch.move_finger, touch.look_finger, player.last_swipe,
+            rad_to_deg(wrapf(player.yaw, -PI, PI)), rad_to_deg(player.pitch),
+            rad_to_deg(angles.y), rad_to_deg(angles.x), player.movement_intent.snapped(Vector3.ONE * .01),
+            player.get_real_velocity().snapped(Vector3.ONE * .01), rad_to_deg(player.travel_heading),
+            player.camera.position.z, "Obstructed" if player.camera_obstructed() else "Clear",
+            frame_delta * 1000.0]
+
 func _unhandled_key_input(event: InputEvent) -> void:
     if event is InputEventKey and event.pressed and not event.echo:
         if event.physical_keycode == KEY_E:
             camp.begin_talk()
         elif event.physical_keycode == KEY_ESCAPE:
             camp.end_talk()
+        elif event.physical_keycode == KEY_F3:
+            _toggle_diagnostics()
 
 func control_positions() -> Dictionary:
     var viewport_size := get_viewport_rect().size
@@ -185,7 +225,8 @@ func control_positions() -> Dictionary:
     for entry in [["talk", nearby_button], ["run", run_button], ["quality", quality_button],
             ["topic", topics[0]], ["close", close_button], ["dive", dive_button],
             ["sky", sky_button], ["reset", reset_button], ["sensitivity", sensitivity_button],
-            ["steering", steering_button]]:
+            ["steering", steering_button], ["controller", controller_button],
+            ["diagnostics", diagnostics_button]]:
         var center: Vector2 = entry[1].get_global_rect().get_center() / viewport_size
         controls[entry[0]] = [center.x, center.y]
     var home := touch.home() / viewport_size
