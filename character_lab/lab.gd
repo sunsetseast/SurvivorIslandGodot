@@ -453,6 +453,8 @@ func _review(args: Array) -> void:
         subject.tree.active = true
         subject.playback.start(&"Idle")
         set_view("Body")
+        set_light(false)
+        set_count(1)
         return
     for sample in _samples():
         if sample[0] == args[0]:
