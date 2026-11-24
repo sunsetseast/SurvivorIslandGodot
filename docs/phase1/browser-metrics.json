@@ -1,0 +1,51 @@
+{
+  "browser": "149.0.7827.55",
+  "device": "Linux desktop, software WebGL 2, 956\u00d7440 CSS px, DPR 1",
+  "startup_local_http_s": 2.96,
+  "samples": [
+    {
+      "rigs": 1,
+      "median_fps": 20.0,
+      "median_draws": 56.0,
+      "median_primitives": 18752.0,
+      "fps_samples": [
+        11,
+        13,
+        13,
+        30,
+        30,
+        27
+      ]
+    },
+    {
+      "rigs": 6,
+      "median_fps": 23.0,
+      "median_draws": 107.0,
+      "median_primitives": 54170.0,
+      "fps_samples": [
+        27,
+        27,
+        27,
+        19,
+        19,
+        16
+      ]
+    },
+    {
+      "rigs": 18,
+      "median_fps": 10.5,
+      "median_draws": 227.0,
+      "median_primitives": 148880.0,
+      "fps_samples": [
+        19,
+        19,
+        13,
+        8,
+        8,
+        8
+      ]
+    }
+  ],
+  "simultaneous_touch_move_orbit": "passed",
+  "startup_and_runtime_errors": []
+}
