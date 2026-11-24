@@ -64,10 +64,9 @@ func _test() -> void:
     var hit := camp.get_world_3d().direct_space_state.intersect_ray(
         PhysicsRayQueryParameters3D.create(from + Vector3.UP, wall_target + Vector3.UP, 1))
     _check(not hit.is_empty(), "No physical cave wall")
-    var original_yaw := camp.player.yaw
-    camp.player.orbit(Vector2(44, -720))
-    _check(camp.player.yaw != original_yaw and camp.player.pitch <= .42, "Camera orbit or pitch limits failed")
+    await _test_touch()
     await _test_water()
+    _test_props()
     print("Tonsai result: ", camp.player.travel_distance, " m continuously walked; ",
         camp.simulation.arrivals, " NPC arrivals; ", failures, " failures")
     quit(int(failures > 0))
@@ -85,14 +84,6 @@ func _test_water() -> void:
     player.touch_direction = Vector2.LEFT
     await _ticks(16)
     _check(absf(angle_difference(player.travel_heading, -PI * .5)) < .20, "Slow 180-degree land turn")
-    player.look_held = true
-    player.orbit(Vector2(80, 10))
-    var manual_yaw := player.yaw
-    await _ticks(200)
-    _check(is_equal_approx(player.yaw, manual_yaw), "Recentering fought the held look input")
-    player.look_held = false
-    player.reset_camera()
-    _check(absf(angle_difference(player.yaw, player.travel_heading + PI)) < .001, "Camera reset failed")
     player.yaw = 0.0
     player.touch_direction = Vector2.ZERO
     player.global_position = camp.site.ground(-52.0, -27.0) + Vector3.UP * .12
@@ -124,6 +115,7 @@ func _test_water() -> void:
             _check(player.position.x >= TonsaiTerrain.OFFSHORE_EDGE and player.position.x < -82.0,
                 "Offshore boundary is missing or placed too close to shore")
             _check(player.swimming(), "Lost surface support at offshore limit")
+            await _test_dive()
         player.touch_direction = Vector2.RIGHT
         waded = false
         for frame in 1350:
@@ -136,6 +128,107 @@ func _test_water() -> void:
         player.touch_direction = Vector2.ZERO
         await _ticks(22)
     print("Two swim cycles and offshore limit exercised")
+
+func _test_dive() -> void:
+    var player := camp.player
+    var level := camp.terrain.water.level
+    player.touch_direction = Vector2.ZERO
+    await _ticks(24)
+    _check(player.can_dive(), "Dive missing in deep water")
+    player.toggle_dive()
+    await _ticks(110)
+    _check(player.underwater() and player.position.y < level - 2.2, "Dive did not descend")
+    _check(player.camera.global_position.y < level, "Camera did not cross the surface")
+    var before := player.position
+    player.pitch = -.59
+    player.touch_direction = Vector2.UP
+    await _ticks(86)
+    _check(player.position.z < before.z - 1.3 and player.position.y < before.y - .5,
+        "Underwater steering did not follow the camera pitch and yaw")
+    _check(player.position.x >= TonsaiTerrain.OFFSHORE_EDGE, "Diver crossed the boundary")
+    _check(player.position.y > camp.site.height(player.position.x, player.position.z),
+        "Diver clipped into the seabed")
+    player.touch_direction = Vector2.ZERO
+    player.toggle_dive()
+    await _ticks(165)
+    _check(player.locomotion == CampHumanoidMotor.Locomotion.TREAD and player.camera.global_position.y > level,
+        "Surface did not return to treading and above-water camera")
+    player.pitch = -.31
+
+func _test_touch() -> void:
+    var player := camp.player
+    var touch := camp.hud.touch
+    player.global_position = camp.site.ground(-51.0, -25.0) + Vector3.UP * .1
+    var size := root.get_visible_rect().size
+    var window := DisplayServer.window_get_size()
+    var short_edge := minf(window.x, window.y)
+    if short_edge <= 1.0:
+        short_edge = minf(size.x, size.y)
+    var left := touch.home()
+    var right := size * Vector2(.67, .49)
+    _press(1, left)
+    _drag(1, left + Vector2(0, -touch.radius), Vector2.ZERO)
+    await _ticks(12)
+    _press(2, right)
+    var start_yaw := player.yaw
+    var start_distance := player.travel_distance
+    for i in 8:
+        _drag(2, size * (Vector2(.41, .5) if i % 2 == 0 else Vector2(.7, .5)),
+            Vector2(short_edge * .43, 0))
+        await _ticks(8)
+        _check(absf(angle_difference(player.yaw, start_yaw - (i + 1) * .43
+            * CampThirdPerson.LOOK_RADIANS_PER_SHORT_EDGE)) < .003, "Orbit lost or repeated a swipe")
+        _check(touch.look_finger == 2 and touch.move_finger == 1, "Finger crossed the touch split")
+    _check(player.travel_distance > start_distance + .65, "Forward hold stopped during orbit")
+    _press(2, right, false)
+    _check(touch.look_finger == -1 and touch.move_finger == 1, "Look release also released movement")
+    var held_yaw := player.yaw
+    await _ticks(180)
+    _check(is_equal_approx(held_yaw, player.yaw), "Camera recentered without a reset")
+    _press(3, right)
+    _press(1, left, false, true)
+    _check(touch.move_finger == -1 and touch.look_finger == 3 and player.touch_direction == Vector2.ZERO,
+        "Move cancellation affected the look owner")
+    _drag(3, right, Vector2(short_edge * .15, 0))
+    touch.cancel()
+    await _ticks(2)
+    _check(touch.look_finger == -1 and player.yaw == held_yaw, "Cancellation left queued look")
+    player.reset_camera()
+    await _ticks(2)
+    _check(absf(angle_difference(player.yaw, player.travel_heading + PI)) < .001, "Camera reset failed")
+
+func _press(index: int, where: Vector2, pressed := true, canceled := false) -> void:
+    var event := InputEventScreenTouch.new()
+    event.index = index
+    event.position = where
+    event.pressed = pressed
+    event.canceled = canceled
+    root.push_input(event, true)
+
+func _drag(index: int, where: Vector2, screen_delta: Vector2) -> void:
+    var event := InputEventScreenDrag.new()
+    event.index = index
+    event.position = where
+    event.screen_relative = screen_delta
+    root.push_input(event, true)
+
+func _test_props() -> void:
+    _check(is_instance_valid(camp.props.well_lid) and is_instance_valid(camp.props.well_scoop),
+        "Well lid and scoop must be independently movable")
+    var fire := camp.props.campfire
+    _check(fire.lit and fire.is_processing(), "Campfire started extinguished")
+    camp.set_economy(true)
+    _check(fire.quality == CampFire.Quality.ECONOMY, "Performance preset did not reduce fire effects")
+    fire.lit = false
+    _check(not fire.is_processing(), "Extinguished fire still processes")
+    fire.lit = true
+    camp.set_economy(false)
+    camp.terrain.set_sky_preset(TonsaiTerrain.SkyPreset.CLOUDY)
+    _check(camp.terrain.atmosphere.sky != null, "Cloudy panorama missing")
+    camp.terrain.set_sky_preset(TonsaiTerrain.SkyPreset.NIGHT)
+    _check(camp.terrain.atmosphere.sky == null and camp.terrain.sun.light_energy < .2, "Night preset failed")
+    camp.terrain.set_sky_preset(TonsaiTerrain.SkyPreset.CLEAR)
+    _check(camp.terrain.atmosphere.sky != null, "Clear panorama was not restored")
 
 func _walk_route(label: String, target: Vector3) -> void:
     var map := camp.navigation.get_navigation_map()

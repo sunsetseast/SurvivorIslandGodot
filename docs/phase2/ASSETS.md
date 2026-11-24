@@ -1,4 +1,4 @@
-# Phase 2.2 asset sources
+# Tonsai asset sources
 
 Runtime assets are in `world/assets`. The export starts from an allowlisted
 staging directory and includes only the existing public character rig.
@@ -10,7 +10,9 @@ staging directory and includes only the existing public character rig.
 | Sky | CC0. [Sunflowers Pure Sky](https://polyhaven.com/a/sunflowers_puresky) [2K HDR](https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/sunflowers_puresky_2k.hdr), SHA-256 `430861cb722951c1eeff3b3c5762e7e73a610fcffc4186b5d828c5e7557fe1b4`. Evaluated [Kloppenheim 05](https://polyhaven.com/a/kloppenheim_05_puresky) at the same resolution. Sunflowers gives the sea-facing view a more varied cloud field. |
 | Campfire log and stump | CC0. [Dead Tree Trunk 02](https://polyhaven.com/a/dead_tree_trunk_02) and [Tree Stump 01](https://polyhaven.com/a/tree_stump_01). |
 | Stones and bucket | CC0. [Coast Land Rocks 03](https://polyhaven.com/a/coast_land_rocks_03) and [Wooden Bucket 01](https://polyhaven.com/a/wooden_bucket_01) from [The Smuggler’s Cove](https://polyhaven.com/collections/smugglers_cove). |
-| Well layout | The stone ring and covered rope-and-bucket silhouette follow the [SurvivorIsland2025 reference image](https://github.com/sunsetseast/SurvivorIsland2025/blob/main/Assets/Screens/water-well.png). The image is a reference only. |
+| Clear sky | CC0. [Kloofendal 43d Clear Pure Sky](https://polyhaven.com/a/kloofendal_43d_clear_puresky), [2K HDR](https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/kloofendal_43d_clear_puresky_2k.hdr), SHA-256 `462a3cc63bfcd9fe0299137a0f33f4ade84e237f4cb6115fe46f5ab400693fe6`. Used as a 2K JPEG. |
+| Fire | CC0. [Unity Labs Flame02](https://unity.com/blog/engine-platform/free-vfx-image-sequences-flipbooks), [flipbook ZIP](https://unity3d.com/files/labs/downloads/vfx/assets01/Flame02/Flame02-flipbooks.zip), SHA-256 `f37b12cdae090591d537ed3bb50396f03833a49864362bf665d6817b7282c954`. Repacked the 64 TGA frames in row order from 16×4 at 128×256 per frame to 8×8 at 64×128 per frame, resampled with Lanczos and saved as lossless RGBA WebP. |
+| Inland well | Original reservoir with clay trim and lozenges, a removable lid and a separate scoop. The round well and lid draw on [Survivor's production-supplied wells](https://www.realityblurred.com/realitytv/2023/10/survivor-contestants-water/) and [the well photographed in Season 35](https://survivingtribal.com/2017/12/05/survivor-season-35-episode-12-photos-show-idol-chicanery/). No reference images ship. |
 
 For each prop, use `https://api.polyhaven.com/files/<slug>` and the
 `gltf → 1k → gltf` entry. Verify the entry and companion BIN and diffuse JPEG
@@ -23,7 +25,9 @@ in the camp. Island Tree 03 adds several texture sets and was left out.
 
 For the panorama, run `convert sunflowers_puresky_2k.hdr -evaluate multiply 0.82
 -colorspace sRGB -sampling-factor 4:2:0 -quality 86 sunflowers-sky.jpg`.
-The sky is a 2K display image. Camp lighting is set independently.
+The sky is a 2K display image. Camp lighting is set independently. For Kloofendal use
+`convert kloofendal_43d_clear_puresky_2k.hdr -evaluate multiply .90 -colorspace sRGB
+-gamma 1.12 -sampling-factor 4:2:0 -quality 86 kloofendal-clear.jpg`.
 
 To regenerate the motion, open the Phase 1 `Maeve.blend` in headless Blender
 and run `character_lab/tools/bake_water_motion.py` with the source and output

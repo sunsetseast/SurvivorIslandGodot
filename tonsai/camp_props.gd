@@ -6,51 +6,19 @@ var wood: StandardMaterial3D
 var endwood: StandardMaterial3D
 const LOG := preload("res://world/assets/seating_log.glb")
 const ROCK := preload("res://world/assets/shore_rock.glb")
-const BUCKET := preload("res://world/assets/well_bucket.glb")
 const STUMP := preload("res://world/assets/seat_stump.glb")
 var rock_mesh: Mesh
-var rope: StandardMaterial3D
-var flame: MeshInstance3D
-var ember: OmniLight3D
-var time := 0.0
+var campfire: CampFire
+var well_lid: Node3D
+var well_scoop: Node3D
 
 func build(data: TonsaiSiteData) -> void:
     site = data
     wood = _material(Color("#674935"))
     endwood = _material(Color("#9e7950"))
-    rope = _material(Color("#a18a61"))
     rock_mesh = _scan_mesh(ROCK)
-    var fire := site.point(site.layout.landmarks.campfire)
-    var ash := _material(Color("#302723"))
-    _cylinder(fire + Vector3(0, -0.02, 0), fire + Vector3(0, 0.03, 0), 0.68, ash)
-    for i in 12:
-        var angle := TAU * i / 12.0
-        var offset := Vector3(cos(angle), 0, sin(angle)) * .88
-        var rock := _visual(rock_mesh, fire + offset - Vector3.UP * .025, null)
-        rock.scale = Vector3(.43, .42 + .09 * sin(i * 7.8), .42)
-        rock.rotation.y = i * 2.399
-    for i in 5:
-        var around := Vector3(cos(i * .79), 0, sin(i * .79)) * .53
-        _cylinder(fire - around + Vector3.UP * .10, fire + around + Vector3.UP * .18, .075, ash)
-    var fire_material := _material(Color("#ff8b30"))
-    fire_material.emission_enabled = true
-    fire_material.emission = Color("#ff4e13")
-    fire_material.emission_energy_multiplier = 1.4
-    flame = _cylinder(fire + Vector3.UP * .14, fire + Vector3.UP * .55, .22, fire_material)
-    (flame.mesh as CylinderMesh).top_radius = 0.026
-    for i in 3:
-        var offset := Vector3(cos(i * 2.1), 0, sin(i * 2.1)) * .17
-        var tongue := _cylinder(fire + offset + Vector3.UP * .16,
-            fire + offset * .8 + Vector3.UP * (.33 + i * .061), .13, fire_material)
-        (tongue.mesh as CylinderMesh).top_radius = .012
-    ember = OmniLight3D.new()
-    ember.position = fire + Vector3.UP * .52
-    ember.light_color = Color("#ff9648")
-    ember.light_energy = .7
-    ember.omni_range = 3.25
-    add_child(ember)
-
     var seat_mesh := _scan_mesh(LOG)
+    _build_fire(site.point(site.layout.landmarks.campfire), seat_mesh)
     for entry: Dictionary in site.layout.logs:
         var node := _visual(seat_mesh, site.point(entry) - Vector3.UP * .05, null)
         node.scale.x = float(entry.len)
@@ -106,6 +74,36 @@ func _scan_mesh(scene: PackedScene) -> Mesh:
     instance.free()
     return result
 
+func _build_fire(at: Vector3, log_mesh: Mesh) -> void:
+    var ash := _material(Color("#292422"))
+    _cylinder(at - Vector3.UP * .02, at + Vector3.UP * .04, .70, ash)
+    for i in 11:
+        var angle := TAU * i / 11.0 + .068 * sin(i * 8.1)
+        var offset := Vector3(cos(angle), 0, sin(angle)) * (.81 + .074 * cos(i * 3.4))
+        var rock := _visual(rock_mesh, at + offset - Vector3.UP * .036, null)
+        rock.scale = Vector3(.43 + .08 * cos(i * 6.0), .35 + .16 * absf(sin(i * 7.8)), .43)
+        rock.rotation.y = i * 2.399
+    var charcoal := (log_mesh.surface_get_material(0) as StandardMaterial3D).duplicate() as StandardMaterial3D
+    charcoal.albedo_color = Color("#544744")
+    for i in 5:
+        var angle := i * 1.256
+        var radial := Vector3(cos(angle), 0, sin(angle))
+        var log_piece := _visual(log_mesh, at + radial * .25 + Vector3.UP * (.065 + .027 * (i % 2)), charcoal)
+        log_piece.scale = Vector3(.69, .34, .31)
+        log_piece.rotation = Vector3(0, -angle, -.20)
+    var coals := _material(Color("#421e14"))
+    coals.emission_enabled = true
+    coals.emission = Color("#bf360b")
+    coals.emission_energy_multiplier = .35
+    for i in 7:
+        var angle := i * 2.399
+        var coal := _visual(rock_mesh, at + Vector3(cos(angle), .046, sin(angle)) * .45, coals)
+        coal.scale = Vector3(.144, .11, .12)
+        coal.rotation.y = angle
+    campfire = CampFire.new()
+    campfire.position = at + Vector3.UP * .14
+    add_child(campfire)
+
 func _build_well() -> void:
     var base := site.point(site.layout.landmarks.well)
     var stonework := MultiMeshInstance3D.new()
@@ -113,59 +111,76 @@ func _build_well() -> void:
     var stones := MultiMesh.new()
     stones.transform_format = MultiMesh.TRANSFORM_3D
     stones.mesh = rock_mesh
-    stones.instance_count = 32
-    for i in 32:
+    stones.instance_count = 48
+    for i in 48:
         @warning_ignore("integer_division")
         var course := i / 16
         var angle := (i % 16 + course * .5) * TAU / 16.0
         var radial := Vector3(cos(angle), 0, sin(angle))
         var yaw := -angle + PI * .5 + sin(i * 9.47) * .19
-        var shape := Basis(Vector3.UP, yaw).scaled_local(Vector3(.49, .68, .48))
-        var at := radial * (.88 + .026 * cos(i * 2.38)) + Vector3.UP * (.375 * course - .08)
+        var shape := Basis(Vector3.UP, yaw).scaled_local(Vector3(.46, .49, .43))
+        var at := radial * (.89 + .026 * cos(i * 2.38)) + Vector3.UP * (.285 * course - .12)
         stones.set_instance_transform(i, Transform3D(shape, at))
     stonework.multimesh = stones
     stonework.position = base
     add_child(stonework)
 
-    var shaft := _material(Color("#282521"))
-    _cylinder(base - Vector3.UP * .04, base + Vector3.UP * .21, .73, shaft)
-    # Split planked cover with the near half closed and a bucket over the opening.
-    for i in 8:
-        var z := .07 + i * .092
-        var width := sqrt(maxf(.03, .76 ** 2 - z ** 2)) * 2.0
-        _box(base + Vector3(0, .73 + .01 * sin(i), z), Vector3(width, .075, .085),
-            wood if i % 3 == 0 else endwood)
-    for x in [-.88, .88]:
-        var post := base + Vector3(x, 0, 0)
-        _cylinder(post + Vector3.UP * .05, post + Vector3.UP * 2.69, .102, wood)
-        for tier in [1.88, 2.46]:
-            for loop in 4:
-                var lash: Vector3 = post + Vector3.UP * (tier + loop * .023)
-                _cylinder(lash, lash + Vector3.UP * .020, .115, rope)
-    _cylinder(base + Vector3(-1.02, 1.94, 0), base + Vector3(1.07, 1.94, 0), .077, endwood)
-    for i in 7:
-        var axle := base + Vector3(-.085 + i * .023, 1.94, 0)
-        _cylinder(axle, axle + Vector3.RIGHT * .023, .112, rope)
-    for side in [-1.0, 1.0]:
-        for i in 11:
-            var x := (i - 5) * .207
-            var plank := _box(base + Vector3(x, 2.50, side * .41),
-                Vector3(.199, .072, .96 + .04 * cos(i * 2.13)), wood if i % 3 else endwood)
-            plank.rotation.x = side * .36
-    _cylinder(base + Vector3(-1.17, 2.68, 0), base + Vector3(1.17, 2.68, 0), .055, wood)
-    _cylinder(base + Vector3(0, 1.94, -.10), base + Vector3(0, 1.27, -.10), .022, rope)
-    _visual(_scan_mesh(BUCKET), base + Vector3(0, .84, -.10), null)
+    var clay := _material(Color("#77503c"))
+    var gold := _material(Color("#ac8356"))
+    _ring(base + Vector3.UP * .83, .73, 1.03, clay)
+    _ring(base + Vector3.UP * .69, .95, 1.06, gold)
+    # Repeated lozenges recall the geometric borders on Thai earthenware.
+    for i in 12:
+        var angle := TAU * i / 12.0
+        var radial := Vector3(cos(angle), 0, sin(angle))
+        var motif := _box(base + radial * 1.036 + Vector3.UP * .73, Vector3(.10, .10, .035), clay)
+        motif.basis = Basis(Vector3.UP, PI * .5 - angle) * Basis(Vector3.BACK, PI * .25)
+    var reservoir := _material(Color("#246563"))
+    reservoir.roughness = .22
+    _cylinder(base + Vector3.UP * .51, base + Vector3.UP * .53, .76, reservoir)
+
+    well_lid = Node3D.new()
+    well_lid.name = "WellLid"
+    well_lid.position = base + Vector3(.17, .98, .02)
+    add_child(well_lid)
+    var lid := _cylinder(well_lid.position - Vector3.UP * .061, well_lid.position, .82, endwood)
+    (lid.mesh as CylinderMesh).radial_segments = 32
+    lid.reparent(well_lid)
+    for i in range(-4, 5):
+        var z := i * .16
+        var chord := sqrt(.80 * .80 - z * z) * 2.0
+        _box(well_lid.position + Vector3(0, .001, z), Vector3(chord, .006, .009), wood).reparent(well_lid)
+    for x in [-.40, .40]:
+        _box(well_lid.position + Vector3(x, .032, 0), Vector3(.075, .060, 1.18), wood).reparent(well_lid)
+    var grip := _material(Color("#382f25"))
+    for x in [-.14, .14]:
+        _cylinder(well_lid.position + Vector3(x, 0, 0), well_lid.position + Vector3(x, .13, 0), .025, grip).reparent(well_lid)
+    _cylinder(well_lid.position + Vector3(-.14, .13, 0), well_lid.position + Vector3(.14, .13, 0), .025, grip).reparent(well_lid)
+
+    well_scoop = Node3D.new()
+    well_scoop.name = "WellScoop"
+    well_scoop.position = base + Vector3(-.21, 1.065, -.36)
+    add_child(well_scoop)
+    var handle := well_scoop.position
+    _cylinder(handle + Vector3(-.57, 0, .11), handle + Vector3(.65, 0, -.18), .027, wood).reparent(well_scoop)
+    var bowl := handle + Vector3(.68, -.02, -.185)
+    var cup := _cylinder(bowl, bowl + Vector3.UP * .051, .127, grip)
+    (cup.mesh as CylinderMesh).bottom_radius = .077
+    cup.reparent(well_scoop)
+    _ring(bowl + Vector3.UP * .056, .104, .139, gold).reparent(well_scoop)
     for use in [&"collection", &"conversation"]:
         var marker := Marker3D.new()
         marker.name = "Well" + String(use).capitalize()
         marker.position = site.well_anchor(use)
         add_child(marker)
 
-func _process(delta: float) -> void:
-    time += delta
-    if flame != null:
-        flame.scale.y = .91 + .12 * sin(time * 17.0) + .07 * cos(time * 23.0)
-        ember.light_energy = .59 + .12 * sin(time * 13.0)
+func _ring(at: Vector3, inner: float, outer: float, material: Material) -> MeshInstance3D:
+    var mesh := TorusMesh.new()
+    mesh.inner_radius = inner
+    mesh.outer_radius = outer
+    mesh.rings = 32
+    mesh.ring_segments = 8
+    return _visual(mesh, at, material)
 
 func _material(color: Color) -> StandardMaterial3D:
     var material := StandardMaterial3D.new()

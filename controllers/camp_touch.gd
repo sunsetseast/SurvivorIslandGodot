@@ -39,6 +39,8 @@ func _notification(what: int) -> void:
         cancel()
 
 func _input(event: InputEvent) -> void:
+    if not is_instance_valid(motor):
+        return
     if event is InputEventScreenTouch and (not event.pressed or event.canceled):
         if event.index == move_finger:
             move_finger = -1
@@ -46,29 +48,35 @@ func _input(event: InputEvent) -> void:
             stick_center = home()
             motor.touch_direction = Vector2.ZERO
             queue_redraw()
-        if event.index == look_finger:
+            get_viewport().set_input_as_handled()
+        elif event.index == look_finger:
             look_finger = -1
-            motor.look_held = false
-
-func _unhandled_input(event: InputEvent) -> void:
-    if not is_instance_valid(motor) or motor.locked:
-        return
-    if event is InputEventScreenTouch and event.pressed and not event.canceled:
-        if event.position.x < size.x * .47 and event.position.y > size.y * .39 and move_finger < 0:
-            move_finger = event.index
-            stick_center = event.position
-            queue_redraw()
-        elif event.position.x >= size.x * .47 and look_finger < 0:
-            look_finger = event.index
-            motor.look_held = true
-    elif event is InputEventScreenDrag:
+            get_viewport().set_input_as_handled()
+    elif event is InputEventScreenDrag and not motor.locked:
         if event.index == move_finger:
             stick_offset = (event.position - stick_center).limit_length(radius)
             var power := clampf((stick_offset.length() / radius - .13) / .87, 0.0, 1.0)
             motor.touch_direction = stick_offset.normalized() * power
             queue_redraw()
+            get_viewport().set_input_as_handled()
         elif event.index == look_finger:
             motor.orbit(event.screen_relative)
+            get_viewport().set_input_as_handled()
+
+func _unhandled_input(event: InputEvent) -> void:
+    if not is_instance_valid(motor) or motor.locked:
+        return
+    # The GUI gets first refusal on new fingers. Ownership then survives
+    # crossing the split or moving over a button until that finger releases.
+    if event is InputEventScreenTouch and event.pressed and not event.canceled:
+        if event.position.x < size.x * .47 and event.position.y > size.y * .39 and move_finger < 0:
+            move_finger = event.index
+            stick_center = event.position
+            queue_redraw()
+            get_viewport().set_input_as_handled()
+        elif event.position.x >= size.x * .47 and look_finger < 0:
+            look_finger = event.index
+            get_viewport().set_input_as_handled()
 
 func cancel() -> void:
     move_finger = -1
