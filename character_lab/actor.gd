@@ -1,8 +1,10 @@
 extends Node3D
 
 const MODEL = preload("res://character_lab/assets/maeve.glb")
+const REFERENCE_SPEEDS := {&"Walk": 1.96, &"Jog": 4.52, &"Swim": 2.12}
 const CLIPS := [&"Idle", &"Walk", &"Jog", &"Talk", &"SitDown", &"Seated", &"StandUp"]
 
+var water_motion: AnimationLibrary
 var player: AnimationPlayer
 var tree: AnimationTree
 var playback: AnimationNodeStateMachinePlayback
@@ -24,23 +26,34 @@ func _ready() -> void:
             _smile_index = index
             break
 
+    var clips: Array = CLIPS.duplicate()
+    if water_motion != null:
+        player.add_animation_library(&"water", water_motion)
+        clips.append_array([&"Swim", &"Tread"])
     var machine := AnimationNodeStateMachine.new()
-    for index in CLIPS.size():
-        var clip: StringName = CLIPS[index]
-        var animation := player.get_animation(clip)
+    for index in clips.size():
+        var clip: StringName = clips[index]
+        var animation_name := StringName("water/" + clip) if index >= CLIPS.size() else clip
+        var animation := player.get_animation(animation_name)
         if clip not in [&"SitDown", &"StandUp"]:
             animation.loop_mode = Animation.LOOP_LINEAR
         var state := AnimationNodeAnimation.new()
-        state.animation = clip
-        machine.add_node(clip, state, Vector2(175 + (index % 4) * 175, 80 + (index / 4) * 125))
-    for from_index in CLIPS.size():
-        for to_index in CLIPS.size():
-            if from_index == to_index:
+        state.animation = animation_name
+        var node: AnimationRootNode = state
+        if clip in [&"Walk", &"Jog", &"Swim"]:
+            var blend := AnimationNodeBlendTree.new()
+            blend.add_node(&"Clip", state, Vector2(0, 100))
+            blend.add_node(&"Rate", AnimationNodeTimeScale.new(), Vector2(190, 100))
+            blend.connect_node(&"Rate", 0, &"Clip")
+            blend.connect_node(&"output", 0, &"Rate")
+            node = blend
+        machine.add_node(clip, node, Vector2(175 + (index % 4) * 175, 80 + (index / 4) * 125))
+    for from: StringName in clips:
+        for to: StringName in clips:
+            if from == to:
                 continue
             var transition := AnimationNodeStateMachineTransition.new()
-            transition.xfade_time = 0.18 if to_index < 3 else 0.24
-            var from: StringName = CLIPS[from_index]
-            var to: StringName = CLIPS[to_index]
+            transition.xfade_time = .18 if to in [&"Idle", &"Walk", &"Jog"] else .24
             if (from == &"SitDown" and to == &"Seated") or (from == &"StandUp" and to == &"Idle"):
                 transition.advance_mode = AnimationNodeStateMachineTransition.ADVANCE_MODE_AUTO
                 transition.switch_mode = AnimationNodeStateMachineTransition.SWITCH_MODE_AT_END
@@ -57,6 +70,10 @@ func _ready() -> void:
 func select(clip: StringName) -> void:
     if playback.get_current_node() != clip:
         playback.travel(clip)
+
+func match_speed(clip: StringName, speed: float) -> void:
+    if REFERENCE_SPEEDS.has(clip):
+        tree.set("parameters/%s/Rate/scale" % clip, clampf(speed / REFERENCE_SPEEDS[clip], .22, 1.22))
 
 func pose(clip: StringName, time: float) -> void:
     tree.active = false

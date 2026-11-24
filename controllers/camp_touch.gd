@@ -48,6 +48,7 @@ func _input(event: InputEvent) -> void:
             queue_redraw()
         if event.index == look_finger:
             look_finger = -1
+            motor.look_held = false
 
 func _unhandled_input(event: InputEvent) -> void:
     if not is_instance_valid(motor) or motor.locked:
@@ -59,6 +60,7 @@ func _unhandled_input(event: InputEvent) -> void:
             queue_redraw()
         elif event.position.x >= size.x * .47 and look_finger < 0:
             look_finger = event.index
+            motor.look_held = true
     elif event is InputEventScreenDrag:
         if event.index == move_finger:
             stick_offset = (event.position - stick_center).limit_length(radius)

@@ -8,6 +8,8 @@ var nearby_button: Button
 var nearby_actor: StringName = &""
 var run_button: Button
 var quality_button: Button
+var reset_button: Button
+var sensitivity_button: Button
 var stats: Label
 var dialog: PanelContainer
 var speaker: Label
@@ -32,6 +34,10 @@ func _ready() -> void:
     add_child(run_button)
     quality_button = _button("Full quality", _toggle_quality)
     add_child(quality_button)
+    reset_button = _button("Center camera", camp.player.reset_camera)
+    add_child(reset_button)
+    sensitivity_button = _button("Look: Medium", _cycle_sensitivity)
+    add_child(sensitivity_button)
     dialog = PanelContainer.new()
     var card := StyleBoxFlat.new()
     card.bg_color = Color("#152830ed")
@@ -67,6 +73,8 @@ func _layout() -> void:
     banner.position = safe.position
     stats.position = safe.position + Vector2(1, 39)
     quality_button.position = Vector2(safe.end.x - 147, safe.position.y)
+    reset_button.position = quality_button.position - Vector2(157, 0)
+    sensitivity_button.position = reset_button.position - Vector2(157, 0)
     run_button.position = Vector2(safe.end.x - 147, safe.end.y - 54)
     nearby_button.position = Vector2(safe.end.x - 147, safe.end.y - 112)
     var width := minf(445.0, safe.size.x - 24.0)
@@ -103,6 +111,7 @@ func refresh() -> void:
     var person := camp.nearby()
     nearby_actor = person.contestant if is_instance_valid(person) else &""
     run_button.text = "Run" if camp.player.run_toggled else "Walk"
+    run_button.visible = not camp.player.swimming() and not dialog.visible
     nearby_button.visible = not nearby_actor.is_empty() and not dialog.visible
     if nearby_button.visible:
         nearby_button.text = "Talk to " + String(CampSimulation.CONTESTANTS[person.contestant])
@@ -123,6 +132,12 @@ func hide_dialog() -> void:
 func _toggle_run() -> void:
     camp.player.run_toggled = not camp.player.run_toggled
     run_button.text = "Run" if camp.player.run_toggled else "Walk"
+
+func _cycle_sensitivity() -> void:
+    var sensitivity := camp.player.sensitivity
+    camp.player.sensitivity = .65 if sensitivity > 1.1 else (1.0 if sensitivity < .9 else 1.4)
+    var labels := {0.65: "Low", 1.0: "Medium", 1.4: "High"}
+    sensitivity_button.text = "Look: " + labels[camp.player.sensitivity]
 
 func _toggle_quality() -> void:
     camp.set_economy(not camp.economical)

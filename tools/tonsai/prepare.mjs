@@ -94,28 +94,56 @@ async function importLayout() {
     return [p.x, p.y ?? w.baseHeight(p.x, p.z), p.z, p.scale * multiplier, p.rotation, variant ?? 0]
       .map(value => +value.toFixed(4));
   }
+  const well = w.LANDMARKS.well;
+  const wellAnchors = {
+    collection: { x: well.x - 2.12, z: well.z },
+    conversation: { x: well.x - 3.7, z: well.z - .1 },
+  };
+  const caveClearance = (x, z) => x > -42 && x < 46 && z > 91 &&
+    (g.cliffSolid(x, z) || z >= g.CAVE.mouthZ - 2 && x > g.CAVE.minX - 2 && x < g.CAVE.maxX + 2);
+  const keepPlant = p => !caveClearance(p.x, p.z) &&
+    Math.hypot(p.x - well.x, p.z - well.z) >= 2.4;
+  // Plants can extend several metres from their roots. Leave the cave face
+  // and the well approach clear while keeping the surrounding screens.
+  const keepUnderstory = p => keepPlant(p) &&
+    !(p.x >= -4 && p.x <= 23 && p.z >= 89 && p.z <= g.CAVE.backZ + 1) &&
+    !(p.x > well.x - 6.0 && p.x < well.x + 2.6 && Math.abs(p.z - well.z) < 4.2);
   const vegetation = {
-    trees: [...w.BROADLEAF.map((p, i) => placement(p, 1, i % 3)),
-      ...BACKDROP_TREES.map((p, i) => placement(p, .36, i % 3))],
-    palms: w.PALMS.map(p => placement(p, .81)),
-    understory: FOREST_PLANTS.filter((p, i) => i % (p.zone === "backdrop" ? 4 : 2) === 0).map(p => placement(p, 1)),
-    ferns: w.FERNS.filter((_, i) => i % 3 === 0).map((p, i) =>
+    trees: [...w.BROADLEAF.filter(keepPlant).map((p, i) => placement(p, 1, i % 3)),
+      ...BACKDROP_TREES.filter(keepPlant).map((p, i) => placement(p, .36, i % 3))],
+    palms: w.PALMS.filter(keepPlant).map(p => placement(p, .81)),
+    understory: FOREST_PLANTS.filter((p, i) => keepUnderstory(p) && i % (p.zone === "backdrop" ? 4 : 2) === 0)
+      .map(p => placement(p, 1)),
+    ferns: w.FERNS.filter((p, i) => keepUnderstory(p) && i % 3 === 0).map((p, i) =>
       placement(p, p.z >= 67 && p.z <= 101 && p.x >= -38 && p.x <= 6 ? 2.3 : 3.2, i % 4)),
     rocks: w.ROCKS.map(p => placement(p, .85)),
-    springRim: Array.from({ length: 11 }, (_, i) => {
-      const a = i * Math.PI * 2 / 11;
-      return placement({ x: g.SPRING.x + Math.cos(a) * 1.65, z: g.SPRING.z + Math.sin(a) * 1.35,
-        scale: .25 + (i % 3) * .055, rotation: i * 2.399 }, 1);
-    }),
   };
+  const hidingCandidates = HIDING_CANDIDATES.map(candidate => {
+    if (candidate.landmarkId !== "spring-seep") return candidate;
+    const { x, z } = candidate.visibility.approachDirection;
+    const y = w.baseHeight(well.x, well.z);
+    const position = { x: well.x - x * 1.08, y: y + .48, z: well.z - z * 1.08 };
+    const approach = { x: well.x - x * 1.85, z: well.z - z * 1.85 };
+    return {
+      ...candidate, landmarkId: "tribe-well", category: "well-stone", position,
+      surfaceAnchor: { ...position, mesh: "WellStonework" },
+      interactionPosition: { ...approach, y: w.baseHeight(approach.x, approach.z) },
+    };
+  });
+  const props = { ...w.PROPS };
+  delete props.trough;
+  props.signs = props.signs.map(sign => sign.text === "Freshwater" ? { ...sign, text: "Water Well" } : sign);
   const layout = {
     locationId: "tonsai", sourceCommit, extent, bounds: w.BOUNDS, territory: g.TERRITORY, shore,
     spawn: w.SPAWN, landmarks: w.LANDMARKS, naturalLandmarks: g.NATURAL_LANDMARKS,
-    trails: g.TRAILS, expandedPlaces: g.EXPANDED_PLACES, privateSpaces: PRIVATE_SPACES,
-    hidingCandidates: HIDING_CANDIDATES, cave: g.CAVE, shelter: w.SHELTER, props: w.PROPS,
+    trails: g.TRAILS, expandedPlaces: g.EXPANDED_PLACES, privateSpaces: PRIVATE_SPACES.map(space => space.id === "water-path"
+      ? { ...space, ...wellAnchors.conversation, label: "Water well conversation" } : space),
+    hidingCandidates, cave: g.CAVE, shelter: w.SHELTER, props, wellAnchors,
     logs: w.SEATING_LOGS, vegetation, headlands: CLIFF_MASSES,
     // Bamboo is represented by non-blocking understory in this port.
-    colliders: w.COLLIDERS.filter(c => c.kind !== "bamboo"),
+    colliders: [...w.COLLIDERS.filter(c => c.kind !== "bamboo" && c.kind !== "spring-pool" &&
+      (!(c.kind === "tree" || c.kind === "palm") || keepPlant(c))),
+      { ...well, hx: 1.19, hz: 1.19, kind: "well" }],
   };
   await writeFile(join(output, "layout.json"), JSON.stringify(layout));
   await writeFile(join(output, "heightfield.bin"), raster);

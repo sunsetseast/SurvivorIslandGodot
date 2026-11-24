@@ -22,10 +22,11 @@ func build(data: TonsaiSiteData, physical_world: TonsaiTerrain) -> bool:
     for part in ["timber", "thatch", "deck", "lashings", "supplies"]:
         _static("shelter-" + part, Vector3.ZERO, null, true)
     var cliff := _static("southern-cliff-rock-far", Vector3.ZERO, stone, true)
+    cliff.mesh = _seat_cliff_on_terrain(cliff.mesh as ArrayMesh)
     var cliff_shape := cliff.mesh.create_trimesh_shape()
     cliff_shape.backface_collision = true
     terrain.add_shape(cliff_shape, Vector3.ZERO, "SouthernCliff")
-    for landmark: Dictionary in site.layout.naturalLandmarks + [{"id": "spring-seep", "x": 108, "z": 36}]:
+    for landmark: Dictionary in site.layout.naturalLandmarks:
         for part in ["wood", "rock"]:
             var key := "%s-%s-far" % [landmark.id, part]
             if library.has(key):
@@ -47,11 +48,47 @@ func build(data: TonsaiSiteData, physical_world: TonsaiTerrain) -> bool:
     fig.scale = Vector3.ONE * 2.4
     for v in 4:
         _batch(["fern_02_" + ["a", "b", "c", "d"][v]], _variant(plants.ferns, v), 47.0, true)
-    _batch(["limestone-far"], plants.rocks + plants.springRim, 74.0, false, true)
+    _batch(["limestone-far"], plants.rocks, 74.0, false, true)
     terrain.add_surface(site.deck_faces(), "ShelterDeck")
     terrain.add_surface(site.ramp_faces(), "ShelterRamp")
     _obstacles()
     return true
+
+func _seat_cliff_on_terrain(source: ArrayMesh) -> ArrayMesh:
+    # The cliff shell is already in world coordinates in the source GLB.
+    # Recess its front arch and sink the exposed base courses. Collision is
+    # made from the same vertices. The traversable floor stays in place.
+    var mesh := ArrayMesh.new()
+    for surface in source.get_surface_count():
+        var arrays := source.surface_get_arrays(surface)
+        var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+        for i in vertices.size():
+            var vertex := vertices[i]
+            vertex = _recess_cave_rim(vertex)
+            var bed := site.height(vertex.x, vertex.z)
+            var gap := vertex.y - bed
+            var east_foot := smoothstep(36.0, 44.0, vertex.x) * (1.0 - smoothstep(9.6, 14.0, vertex.y))
+            var low_course := 1.0 - smoothstep(.55, 1.6, gap)
+            vertex.y -= maxf(0.0, gap + .27) * maxf(east_foot, low_course)
+            vertices[i] = vertex
+        arrays[Mesh.ARRAY_VERTEX] = vertices
+        mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+    return mesh
+
+func _recess_cave_rim(vertex: Vector3) -> Vector3:
+    var cave: Dictionary = site.layout.cave
+    var first_ring := float(cave.mouthZ) - 1.0
+    var distance := vertex.z - first_ring
+    # The authored tunnel rings sit on 1.5 m intervals. The irregular outer
+    # shell does not. Bring the projecting rings inward to meet the shell,
+    # deeper at the feet and shallower where the roof curves over the mouth.
+    if vertex.x < cave.minX - .2 or vertex.x > cave.maxX + .2 or vertex.y > 8.65:
+        return vertex
+    if distance < 0.0 or distance > 6.0 or absf(distance - snappedf(distance, 1.5)) > .001:
+        return vertex
+    var recessed_z := lerpf(102.7, 99.6, smoothstep(3.6, 8.1, vertex.y))
+    vertex.z += (recessed_z - first_ring) * (1.0 - distance / 8.0)
+    return vertex
 
 func _load_kit(file_name: String) -> bool:
     var kit := load(TonsaiSiteData.DIR + file_name + ".glb") as PackedScene
@@ -82,7 +119,12 @@ func _grade_foliage() -> void:
         var mesh := library[key] as ArrayMesh
         for i in mesh.get_surface_count():
             var material := mesh.surface_get_material(i).duplicate() as StandardMaterial3D
-            material.albedo_color *= Color("#a0b66f") if key.begins_with("fern") else Color("#849856")
+            var tint := Color("#849856")
+            if key.begins_with("understory"):
+                tint = Color("#6a803f") if "-1-" in key else Color("#758c56")
+            elif key.begins_with("fern"):
+                tint = Color("#8ea968")
+            material.albedo_color *= tint
             material.metallic_specular = .08
             material.roughness = .97
             mesh.surface_set_material(i, material)

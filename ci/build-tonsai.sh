@@ -10,6 +10,11 @@ rm -rf "$stage" "$output"
 mkdir -p "$stage/character_lab/assets" "$stage/tests" "$stage/tools/tonsai" "$output"
 touch build/.gdignore
 cp -R controllers simulation "$stage/"
+mkdir -p "$stage/world/assets"
+cp world/water_surface.gd world/water.gdshader "$stage/world/"
+for asset in surface-swimming.res sunflowers-sky.jpg water-ripple.png seating_log.glb seat_stump.glb shore_rock.glb well_bucket.glb; do
+  cp "world/assets/$asset" "$stage/world/assets/"
+done
 mkdir -p "$stage/tonsai/shaders" "$stage/tonsai/generated"
 cp tonsai/*.gd tonsai/*.tscn "$stage/tonsai/"
 cp tonsai/shaders/*.gdshader "$stage/tonsai/shaders/"
@@ -24,13 +29,13 @@ sed -e 's|res://scenes/main.tscn|res://tonsai/camp.tscn|' \
     -e 's|Survivor Island — Phase 0|Survivor Island — Tonsai Beach|' \
     -e 's|window/stretch/aspect="[^"]*"|window/stretch/aspect="expand"|' project.godot > "$stage/project.godot"
 sed 's|^include_filter=""|include_filter="tonsai/generated/layout.json,tonsai/generated/heightfield.bin"|' \
-    export_presets.cfg | sed 's|encryption_include_filter="tonsai[^"]*"|encryption_include_filter=""|' > "$stage/export_presets.cfg"
+    export_presets.cfg | sed 's|^exclude_filter=""|exclude_filter="tests/*,tools/*"|' > "$stage/export_presets.cfg"
 if [[ -n "${TONSAI_REFERENCE:-}" ]]; then
   node tools/tonsai/prepare.mjs "$TONSAI_REFERENCE"
 else
   node tools/tonsai/prepare.mjs
 fi
-for asset in layout.json heightfield.bin reconstruction-low.glb landmarks-low.glb limestone.glb coastal-tree.glb palms.glb fern_02.glb sand_02-diff.jpg brown_mud_leaves_01-diff.jpg rock_06_diff_1k.jpg tropical-clouds.png; do
+for asset in layout.json heightfield.bin reconstruction-low.glb landmarks-low.glb limestone.glb coastal-tree.glb palms.glb fern_02.glb sand_02-diff.jpg brown_mud_leaves_01-diff.jpg rock_06_diff_1k.jpg; do
   cp "tonsai/generated/$asset" "$stage/tonsai/generated/"
 done
 run_godot() {
