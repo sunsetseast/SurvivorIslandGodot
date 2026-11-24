@@ -1,111 +1,109 @@
 class_name CampSimulation
 extends RefCounted
-## Provisional behavior provider. Receives physical events from controllers and
-## publishes intentions keyed by identity. Conversation records have one owner.
+## Activity reservations, semantic transitions and participant-owned memories.
 
-const PLAYER := &"player"
-const CONTESTANTS := {
-    &"cirie": "Cirie", &"yul": "Yul", &"parvati": "Parvati", &"jeremy": "Jeremy", &"kelley": "Kelley",
-}
 const ACTIVITIES := {
-    &"fire": {"label": "Tending the fire", "pose": &"Idle"},
-    &"shelter": {"label": "Resting at the shelter", "pose": &"Seated"},
-    &"shore": {"label": "Taking a moment on the beach", "pose": &"Idle"},
-    &"spring": {"label": "Visiting the water well", "pose": &"Idle"},
-    &"trail": {"label": "Walking the freshwater trail", "pose": &"Idle"},
-    &"work": {"label": "Working at the camp rack", "pose": &"Idle"},
+    "fire": {"label": "Tending the fire", "pose": &"Idle"},
+    "shelter": {"label": "Resting at the shelter", "pose": &"Seated"},
+    "shore": {"label": "Taking a moment on the beach", "pose": &"Idle"},
+    "spring": {"label": "Visiting the water well", "pose": &"Idle"},
+    "trail": {"label": "Walking the freshwater trail", "pose": &"Idle"},
+    "work": {"label": "Working at the camp rack", "pose": &"Idle"},
 }
-const TOPICS := {&"camp": "How's camp feeling?", &"water": "Where's the freshwater?"}
+const TOPICS := {"camp": "How's camp feeling?", "water": "Where's the freshwater?"}
 const REPLIES := {
-    &"cirie": "I like hearing what people say when they think no one is keeping score.",
-    &"yul": "We should figure out which chores each person wants to handle.",
-    &"parvati": "The walk down to the beach gets you away from the whole group.",
-    &"jeremy": "First thing is making sure the fire keeps going.",
-    &"kelley": "The shelter's a good place to see who's coming and going.",
+    "cirie": "I like hearing what people say when they think no one is keeping score.",
+    "yul": "We should figure out which chores each person wants to handle.",
+    "parvati": "The walk down to the beach gets you away from the whole group.",
+    "jeremy": "First thing is making sure the fire keeps going.",
+    "kelley": "The shelter's a good place to see who's coming and going.",
 }
-var _people: Dictionary[StringName, Dictionary] = {}
-var _reservations: Dictionary[StringName, StringName] = {}
-var _random := RandomNumberGenerator.new()
-var _conversation: StringName = &""
+const MAX_RECORDS := 500
+
+var people: Dictionary = {}
+var reservations: Dictionary = {}
+var objects := {"fire": {"lit": true}}
+var conversation := ""
 var arrivals := 0
 
-func _init() -> void:
-    _random.randomize()
-    for id: StringName in CONTESTANTS:
-        _people[id] = {"activity": &"", "left": 0.0, "stage": &"waiting", "journal": []}
-    _people[PLAYER] = {"journal": []}
+func add(id: String, activity: String) -> void:
+    people[id] = {"activity": "", "deadline": 0, "stage": "waiting", "journal": []}
+    if not activity.is_empty():
+        _reserve(id, activity, 0)
 
-func intent(id: StringName) -> StringName:
-    var person := _people[id]
-    if person.activity != &"":
-        return person.activity
-    var choices: Array = ACTIVITIES.keys().filter(func(key: StringName) -> bool:
-        return not _reservations.has(key))
-    if choices.is_empty():
-        return &""
-    var selected: StringName = choices[_random.randi_range(0, choices.size() - 1)]
-    _reservations[selected] = id
-    person.activity = selected
-    person.stage = &"travel"
-    return selected
+func _reserve(id: String, activity: String, tick: int) -> void:
+    reservations[activity] = id
+    var person: Dictionary = people[id]
+    person.activity = activity
+    person.stage = "travel"
+    person.deadline = tick + 24
 
-func reserve_first(id: StringName, activity: StringName) -> void:
-    if _reservations.has(activity):
-        return
-    _reservations[activity] = id
-    _people[id].activity = activity
-    _people[id].stage = &"travel"
-
-func arrived(id: StringName, activity: StringName) -> bool:
-    var person := _people[id]
-    if person.activity != activity or person.stage != &"travel":
+func arrived(id: String, activity: String, tick: int, rng: RandomNumberGenerator) -> bool:
+    var person: Dictionary = people[id]
+    if person.activity != activity or person.stage != "travel" or conversation == id:
         return false
-    person.stage = &"occupied"
-    person.left = _random.randf_range(11.0, 28.0)
+    person.stage = "occupied"
+    person.deadline = tick + rng.randi_range(44, 112)
     arrivals += 1
     return true
 
-func travel_failed(id: StringName) -> void:
-    var person := _people[id]
-    _reservations.erase(person.activity)
-    person.activity = &""
-    person.stage = &"waiting"
-
-func advance(id: StringName, seconds: float) -> bool:
-    var person := _people[id]
-    if person.stage != &"occupied" or _conversation == id:
+func travel_failed(id: String, activity: String, tick: int) -> bool:
+    var person: Dictionary = people[id]
+    if person.activity != activity or person.stage != "travel" or conversation == id:
         return false
-    person.left = maxf(0.0, person.left - seconds)
-    if person.left > 0.0:
-        return false
-    travel_failed(id)
+    _release(person, tick)
     return true
 
-func can_talk(id: StringName) -> bool:
-    return CONTESTANTS.has(id) and _conversation == &""
+func _release(person: Dictionary, tick: int) -> void:
+    reservations.erase(person.activity)
+    person.activity = ""
+    person.stage = "waiting"
+    person.deadline = tick + 5
 
-func begin_conversation(id: StringName) -> bool:
-    if not can_talk(id):
-        return false
-    _conversation = id
-    return true
+func schedule(id: String, tick: int, physical: bool, rng: RandomNumberGenerator) -> void:
+    var person: Dictionary = people[id]
+    if conversation == id:
+        person.deadline += 1
+        return
+    if tick < int(person.deadline):
+        return
+    match person.stage:
+        "waiting":
+            var choices: Array = []
+            for activity: String in ACTIVITIES:
+                if not reservations.has(activity):
+                    choices.append(activity)
+            if not choices.is_empty():
+                _reserve(id, choices[rng.randi_range(0, choices.size() - 1)], tick)
+        "travel":
+            if not physical:
+                arrived(id, person.activity, tick, rng)
+        "occupied":
+            _release(person, tick)
 
-func respond(id: StringName, topic: StringName) -> String:
-    if _conversation != id or not TOPICS.has(topic):
-        return ""
-    var reply: String = REPLIES[id]
-    if topic == &"water":
+func respond(actor: String, target: String, topic: String, tick: int, receipt: String) -> String:
+    var reply: String = REPLIES.get(target, "We should check in with the others.")
+    if topic == "water":
         reply = "Take the trail inland from the shelter. Go past the big fig and follow it east."
-    var event := {"with": id, "topic": topic, "reply": reply}
-    _people[PLAYER].journal.append(event)
-    _people[id].journal.append({"with": PLAYER, "topic": topic, "reply": reply})
+    for pair: Array in [[actor, target], [target, actor]]:
+        var journal: Array = people[pair[0]].journal
+        journal.append({"with": pair[1], "topic": topic, "reply": reply, "tick": tick, "id": receipt})
+        if journal.size() > MAX_RECORDS:
+            journal.pop_front()
     return reply
 
-func end_conversation(id: StringName) -> void:
-    if _conversation == id:
-        _conversation = &""
+func snapshot() -> Dictionary:
+    return {"people": people.duplicate(true), "objects": objects.duplicate(true), "arrivals": arrivals}
 
-func knowledge_for(owner: StringName) -> Array:
-    if not _people.has(owner):
-        return []
-    return _people[owner].journal.duplicate(true)
+func restore(data: Dictionary) -> void:
+    people = data.people.duplicate(true)
+    objects = data.objects.duplicate(true)
+    arrivals = int(data.arrivals)
+    for id: String in people:
+        var person: Dictionary = people[id]
+        person.deadline = int(person.deadline)
+        for record: Dictionary in person.journal:
+            record.tick = int(record.tick)
+        var activity: String = person.activity
+        if not activity.is_empty():
+            reservations[activity] = id

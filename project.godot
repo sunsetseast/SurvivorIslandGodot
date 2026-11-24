@@ -2,8 +2,8 @@
 config_version=5
 
 [application]
-config/name="Survivor Island — Phase 0"
-run/main_scene="res://scenes/main.tscn"
+config/name="Survivor Island"
+run/main_scene="res://application/game_app.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 
 [display]

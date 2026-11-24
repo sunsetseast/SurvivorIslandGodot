@@ -244,6 +244,65 @@ def swim(page, captures):
     page.keyboard.up("s")
 
 
+def app_state(page):
+    return page.evaluate("JSON.parse(window.survivorApp)")
+
+
+def app_wait(page, expression):
+    page.wait_for_function(
+        f"Boolean(window.survivorApp) && ((a) => {expression})(JSON.parse(window.survivorApp))"
+    )
+    return app_state(page)
+
+
+def app_tap(page, name):
+    state = app_wait(page, f'Boolean(a.actions["{name}"])')
+    x, y = state["actions"][name]
+    page.touchscreen.tap(x * page.viewport_size["width"], y * page.viewport_size["height"])
+
+
+def resume_after_reload(page):
+    """Exercise the real menu and browser storage with the shipped canvas controls."""
+    before = app_wait(page, 'a.screen === "SESSION" && a.knowledge === 1 && a.revision >= 2')
+    saved_pose = metrics(page)
+    app_tap(page, "save")
+    saved = app_wait(page, f"a.revision > {before['revision']}")
+    app_tap(page, "menu")
+    menu = app_wait(page, 'a.screen === "MAIN"')
+    app_tap(page, "settings")
+    app_wait(page, 'a.screen === "SETTINGS"')
+    app_tap(page, "steering")
+    app_wait(page, "a.preferences.camera_steering")
+    app_tap(page, "quality")
+    app_wait(page, "a.preferences.economy")
+    app_tap(page, "sensitivity")
+    app_wait(page, "a.preferences.sensitivity > 1")
+    page.reload(wait_until="domcontentloaded")
+    reloaded = app_wait(page, 'a.screen === "MAIN"')
+    assert reloaded["guest"] == before["guest"]
+    preferences = reloaded["preferences"]
+    assert preferences["camera_steering"] and preferences["economy"] and not preferences["run"], reloaded
+    assert abs(preferences["sensitivity"] - 1.4) < .0001, reloaded
+    app_tap(page, "continue")
+    after = app_wait(page, 'a.screen === "SESSION" && a.knowledge === 1')
+    assert after["season"] == before["season"] and after["tick"] >= saved["tick"]
+    page.wait_for_function("Boolean(window.tonsaiMetrics)")
+    restored = metrics(page)
+    assert hypot(restored["x"] - saved_pose["x"], restored["z"] - saved_pose["z"]) < 1.0
+    assert abs(signed_turn(restored["heading"], saved_pose["heading"])) < .35
+    assert restored["economy"] and restored["controller"] == "B"
+    tap(page, "quality")
+    until(page, lambda m: not m["economy"], "Could not reset quality after reload")
+    tap(page, "steering")
+    tap(page, "sensitivity")
+    page.wait_for_timeout(330)
+    tap(page, "sensitivity")
+    app_wait(page, "!a.preferences.camera_steering && a.preferences.sensitivity === 1")
+    return {"load_ms": after["location_ms"], "save_usec": saved["save_usec"],
+            "sampled_simulation_step_usec": after["step_usec"],
+            "unload_ms": menu["unload_ms"], "restored_conversations": after["knowledge"]}
+
+
 def main():
     args = argparse.ArgumentParser()
     args.add_argument("build", type=Path)
@@ -267,10 +326,16 @@ def main():
         page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
         now = monotonic()
         page.goto(url, wait_until="domcontentloaded")
-        page.wait_for_function("Boolean(window.tonsaiMetrics)", timeout=50000)
+        app_wait(page, 'a.screen === "MAIN"')
         startup = round(monotonic() - now, 2)
+        page.screenshot(path=config.captures / "main-menu.png")
+        app_tap(page, "new")
+        app_wait(page, 'a.screen === "SLOTS"')
+        app_tap(page, "slot1")
+        page.wait_for_function("Boolean(window.tonsaiMetrics)", timeout=50000)
         page.screenshot(path=config.captures / "spawn.png")
         exercise(page, config.captures)
+        lifecycle = resume_after_reload(page)
         steering = {}
         performance = {}
         for name in ("A", "B"):
@@ -300,7 +365,9 @@ def main():
         report = {
             "browser": browser.version,
             "device": "Linux Chromium, SwiftShader software WebGL 2, 956×440 CSS px, DPR 1",
-            "startup_s": startup,
+            "startup_menu_s": startup,
+            "js_heap_bytes": page.evaluate("performance.memory?.usedJSHeapSize ?? null"),
+            "reload_and_continue": lifecycle,
             "six_animated_characters": performance,
             "conversation_and_two_thumb_controls": "passed",
             "held_forward_swipes_and_cancellation": steering,

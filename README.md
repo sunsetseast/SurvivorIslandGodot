@@ -1,5 +1,9 @@
 # Survivor Island — Godot Phase 0
 
+The Phase 3A game starts at a development menu and runs an 18-contestant technical season with Tonsai as its playable camp. The [technical design](docs/TECHNICAL_DESIGN.md) covers the session, simulation, saves and build boundaries. Run `bash ci/build-tonsai.sh` with the pinned Godot toolchain to assemble the current game.
+
+## Phase 0 laboratory
+
 Phase 0 tests the iPhone-only build and preview workflow on Godot 4.7.2 stable. The scene uses Godot primitives for a short movement and camera test.
 
 ## Test on iPhone 17 Pro Max

@@ -1,8 +1,10 @@
 class_name TonsaiNpc
 extends CampHumanoidMotor
 
-var contestant: StringName
-var simulation: CampSimulation
+var contestant: String
+var display_name: String
+var session: GameSession
+var local_host: LocalGameSession
 var destinations: Dictionary[StringName, Vector3]
 var agent: NavigationAgent3D
 var target_activity: StringName = &""
@@ -24,7 +26,7 @@ func _ready() -> void:
     agent.path_max_distance = 2.5
     add_child(agent)
     var identifier := Label3D.new()
-    identifier.text = simulation.CONTESTANTS[contestant]
+    identifier.text = display_name
     identifier.position.y = 1.92
     identifier.pixel_size = .0035
     identifier.font_size = 45
@@ -43,21 +45,28 @@ func _physics_process(delta: float) -> void:
         delay -= delta
         walk_direction(Vector3.ZERO, false, delta, motion_clip == &"Idle")
         return
-    if target_activity.is_empty():
-        target_activity = simulation.intent(contestant)
+    var activity := session.activity(TonsaiCamp.LOCATION, contestant)
+    var assigned := StringName(activity.get("activity", ""))
+    if target_activity != assigned:
+        if not target_activity.is_empty():
+            _leave()
+            return
+        target_activity = assigned
         if not target_activity.is_empty():
             _approach = destinations[target_activity]
             agent.target_position = _approach
+    if target_activity.is_empty():
+        walk_direction(Vector3.ZERO, false, delta)
         return
-    if at_activity:
+    if activity.get("stage") == "occupied":
         walk_direction(Vector3.ZERO, false, delta, false)
-        if simulation.advance(contestant, delta):
-            _leave()
+        if not at_activity:
+            at_activity = true
+            _activity_pose()
         return
-    if _close_to(_approach) and simulation.arrived(contestant, target_activity):
+    if local_host != null and _close_to(_approach) and local_host.report_travel(contestant, String(target_activity), true):
         at_activity = true
-        var pose: StringName = simulation.ACTIVITIES[target_activity].pose
-        set_motion(&"SitDown" if pose == &"Seated" else pose)
+        _activity_pose()
         return
     var next := agent.get_next_path_position()
     var toward := next - global_position
@@ -67,8 +76,7 @@ func _physics_process(delta: float) -> void:
     var stepped := Vector2(global_position.x - previous.x, global_position.z - previous.z).length()
     travel_distance += stepped
     _no_progress = maxf(0.0, _no_progress - delta * 2.0) if stepped > .007 else _no_progress + delta
-    if _no_progress >= 4.0:
-        simulation.travel_failed(contestant)
+    if _no_progress >= 4.0 and local_host != null and local_host.report_travel(contestant, String(target_activity), false):
         _leave()
 
 func _close_to(p: Vector3) -> bool:
@@ -94,8 +102,11 @@ func resume() -> void:
     talking_to = null
     _no_progress = 0.0
     if at_activity:
-        var pose: StringName = simulation.ACTIVITIES[target_activity].pose
-        set_motion(&"SitDown" if pose == &"Seated" else pose)
+        _activity_pose()
     elif not target_activity.is_empty():
         agent.target_position = _approach
         set_motion(&"Idle")
+
+func _activity_pose() -> void:
+    var pose: StringName = CampSimulation.ACTIVITIES[String(target_activity)].pose
+    set_motion(&"SitDown" if pose == &"Seated" else pose)

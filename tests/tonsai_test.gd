@@ -46,8 +46,8 @@ func _test() -> void:
         _check(contestant.position.distance_to(previous) < .12, "Talk should interrupt travel")
         _check(contestant.motion_clip == &"Talk", "NPC did not play talking state")
         _check(not camp.respond(&"water").is_empty(), "Dialogue response missing")
-        _check(camp.simulation.knowledge_for(id).size() == 1, "Participant has no conversation memory")
-        _check(camp.simulation.knowledge_for(&"yul").is_empty(), "Private memory leaked across identities")
+        _check(camp.local_host.checkpoint().world.tonsai.people[id].journal.size() == 1, "Participant has no conversation memory")
+        _check(camp.local_host.checkpoint().world.tonsai.people["yul"].journal.is_empty(), "Private memory leaked across identities")
         camp.end_talk()
         _check(not camp.player.locked and contestant.talking_to == null, "Controls did not resume")
         _drag(1, stick - Vector2(0, camp.hud.touch.radius), Vector2.ZERO)
@@ -66,7 +66,7 @@ func _test() -> void:
     }
     for label: String in travel_points:
         await _walk_route(label, travel_points[label])
-    _check(camp.simulation.arrivals >= 3, "NPCs did not arrive in sequence")
+    _check(camp.local_host.arrivals("tonsai") >= 3, "NPCs did not arrive in sequence")
     camp.player.touch_direction = Vector2.ZERO
     camp.player.collision_mask |= 8
     await _ticks(18)
@@ -83,7 +83,7 @@ func _test() -> void:
     await _test_camera_comparison()
     await _test_corrupted_touch()
     print("Tonsai result: ", camp.player.travel_distance, " m continuously walked; ",
-        camp.simulation.arrivals, " NPC arrivals; ", failures, " failures")
+        camp.local_host.arrivals("tonsai"), " NPC arrivals; ", failures, " failures")
     quit(int(failures > 0))
 
 func _test_water() -> void:

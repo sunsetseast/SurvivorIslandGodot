@@ -83,8 +83,8 @@ func _ready() -> void:
     reply = _label("", 17)
     reply.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     stack.add_child(reply)
-    for topic: StringName in CampSimulation.TOPICS:
-        var button := _button(CampSimulation.TOPICS[topic], camp.respond.bind(topic))
+    for topic: String in CampSimulation.TOPICS:
+        var button := _button(CampSimulation.TOPICS[topic], camp.respond.bind(StringName(topic)))
         topics.append(button)
         stack.add_child(button)
     close_button = _button("Back to camp", camp.end_talk)
@@ -148,7 +148,7 @@ func refresh() -> void:
     dive_button.text = "Surface" if camp.player.dive_requested else "Dive"
     nearby_button.visible = not nearby_actor.is_empty() and not dialog.visible
     if nearby_button.visible:
-        nearby_button.text = "Talk to " + String(CampSimulation.CONTESTANTS[person.contestant])
+        nearby_button.text = "Talk to " + person.display_name
 
 func show_dialog(label: String) -> void:
     speaker.text = label
@@ -167,6 +167,7 @@ func hide_dialog() -> void:
 func _toggle_run() -> void:
     camp.player.run_toggled = not camp.player.run_toggled
     run_button.text = "Run" if camp.player.run_toggled else "Walk"
+    camp.remember_preference("run", camp.player.run_toggled)
 
 func _toggle_dive() -> void:
     camp.player.toggle_dive()
@@ -179,17 +180,33 @@ func _cycle_sky() -> void:
 func _cycle_sensitivity() -> void:
     var sensitivity := camp.player.sensitivity
     camp.player.sensitivity = .65 if sensitivity > 1.1 else (1.0 if sensitivity < .9 else 1.4)
+    camp.remember_preference("sensitivity", camp.player.sensitivity)
+    _update_preferences_labels()
+
+func apply_preferences() -> void:
+    var preferences := camp.profile.preferences
+    camp.player.sensitivity = preferences.sensitivity
+    camp.player.camera_relative_steering = preferences.camera_steering
+    camp.player.run_toggled = preferences.run
+    camp.set_economy(preferences.economy)
+    _update_preferences_labels()
+
+func _update_preferences_labels() -> void:
     var labels := {0.65: "Low", 1.0: "Medium", 1.4: "High"}
     sensitivity_button.text = "Look: " + labels[camp.player.sensitivity]
+    steering_button.text = "Steer: Camera" if camp.player.camera_relative_steering else "Steer: Stick"
+    quality_button.text = "Economy" if camp.economical else "Full quality"
 
 func _toggle_quality() -> void:
     camp.set_economy(not camp.economical)
-    quality_button.text = "Economy" if camp.economical else "Full quality"
+    camp.remember_preference("economy", camp.economical)
+    _update_preferences_labels()
 
 func _toggle_steering() -> void:
     var player := camp.player
     player.camera_relative_steering = not player.camera_relative_steering
-    steering_button.text = "Steer: Camera" if player.camera_relative_steering else "Steer: Stick"
+    camp.remember_preference("camera_steering", player.camera_relative_steering)
+    _update_preferences_labels()
 
 func select_controller(use_b: bool) -> void:
     var player := camp.player
