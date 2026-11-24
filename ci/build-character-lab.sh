@@ -18,8 +18,8 @@ python3 character_lab/tools/validate_glb.py character_lab/assets/maeve.glb
 rm -rf "$stage" "$output"
 mkdir -p "$stage/character_lab/assets" "$stage/scripts" "$stage/tests" "$output"
 touch build/.gdignore
-sed -e 's|res://scenes/main.tscn|res://character_lab/lab.tscn|' \
-    -e 's|Survivor Island — Phase 0|Survivor Island — Character Lab|' \
+sed -e 's|res://application/game_app.tscn|res://character_lab/lab.tscn|' \
+    -e 's|config/name=.*|config/name="Survivor Island — Character Lab"|' \
     project.godot > "$stage/project.godot"
 cp export_presets.cfg "$stage/"
 cp character_lab/*.gd character_lab/*.tscn "$stage/character_lab/"

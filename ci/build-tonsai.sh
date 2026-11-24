@@ -9,7 +9,7 @@ output="$PWD/build/tonsai"
 rm -rf "$stage" "$output"
 mkdir -p "$stage/character_lab/assets" "$stage/tests" "$stage/tools/tonsai" "$output"
 touch build/.gdignore
-cp -R controllers simulation "$stage/"
+cp -R controllers simulation application persistence "$stage/"
 mkdir -p "$stage/world/assets"
 cp world/water_surface.gd world/water.gdshader world/camp_fire.gd world/fire_flipbook.gdshader "$stage/world/"
 for asset in surface-swimming.res sunflowers-sky.jpg kloofendal-clear.jpg flame02.webp water-ripple.png seating_log.glb seat_stump.glb shore_rock.glb; do
@@ -19,15 +19,13 @@ mkdir -p "$stage/tonsai/shaders" "$stage/tonsai/generated"
 cp tonsai/*.gd tonsai/*.tscn "$stage/tonsai/"
 cp tonsai/shaders/*.gdshader "$stage/tonsai/shaders/"
 cp tools/tonsai/bake_nav.gd "$stage/tools/tonsai/"
-cp tests/tonsai_test.gd "$stage/tests/"
+cp tests/tonsai_test.gd tests/application_test.gd "$stage/tests/"
 cp character_lab/actor.gd "$stage/character_lab/"
 cp character_lab/assets/maeve.glb "$stage/character_lab/assets/"
 cp icon.svg "$stage/" 2>/dev/null || true
 # This stage is the sole export root. Source references and private likeness
 # files are outside the allowlist. Neither Phase 0 nor the lab is reconfigured.
-sed -e 's|res://scenes/main.tscn|res://tonsai/camp.tscn|' \
-    -e 's|Survivor Island — Phase 0|Survivor Island — Tonsai Beach|' \
-    -e 's|window/stretch/aspect="[^"]*"|window/stretch/aspect="expand"|' project.godot > "$stage/project.godot"
+cp project.godot "$stage/"
 sed 's|^include_filter=""|include_filter="tonsai/generated/layout.json,tonsai/generated/heightfield.bin"|' \
     export_presets.cfg | sed 's|^exclude_filter=""|exclude_filter="tests/*,tools/*"|' > "$stage/export_presets.cfg"
 if [[ -n "${TONSAI_REFERENCE:-}" ]]; then
@@ -51,6 +49,7 @@ run_godot --editor --import --quit
 run_godot --script res://tools/tonsai/bake_nav.gd
 cp "$stage/tonsai/generated/navigation.res" tonsai/generated/navigation.res
 run_godot --fixed-fps 60 --script res://tests/tonsai_test.gd
+run_godot --fixed-fps 60 --script res://tests/application_test.gd
 run_godot --export-release Web "$output/index.html"
 python3 - "$output" <<'PY'
 from pathlib import Path
@@ -66,7 +65,7 @@ for file, magic in {"index.html": b"<!DOCTYPE", "index.js": b"", "index.pck": b"
     print(f"{file}: {path.stat().st_size:,} bytes")
 html = (root / "index.html").read_text()
 assert re.search(r"GODOT_THREADS_ENABLED\s*=\s*false", html)
-assert 'Tonsai' in html
+assert 'Survivor Island' in html
 PY
 touch "$output/.nojekyll"
 cp controllers/third_party/PHANTOM_CAMERA_LICENSE.txt "$output/third-party-notices.txt"

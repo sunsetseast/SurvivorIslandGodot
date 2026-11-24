@@ -127,6 +127,10 @@ func toggle_dive() -> void:
         dive_requested = true
         _dive_target = minf(global_position.y, water.level - DIVE_OFFSET)
 
+func restore_dive(active: bool) -> void:
+    dive_requested = active
+    _dive_target = global_position.y
+
 func _update_water_state(desired: Vector3) -> void:
     if water == null:
         return
