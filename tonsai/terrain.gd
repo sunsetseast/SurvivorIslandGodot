@@ -6,9 +6,18 @@ const WATER := preload("res://world/water.gdshader")
 const SEA_LEVEL := 0.03
 const OFFSHORE_EDGE := -83.0
 const TILE := 32
+enum SkyPreset { CLEAR, CLOUDY, NIGHT }
+const PANORAMAS := ["res://world/assets/kloofendal-clear.jpg", "res://world/assets/sunflowers-sky.jpg"]
+const DAY_FOG := Color("#a8bfc4")
+const NIGHT_FOG := Color("#34405c")
+const WATER_FOG := Color("#206b6c")
 var site: TonsaiSiteData
 var sun: DirectionalLight3D
 var water: CampWaterSurface
+var sky_preset := SkyPreset.CLEAR
+var atmosphere: Environment
+var _submersion := 0.0
+var _sky := Sky.new()
 
 func build(data: TonsaiSiteData) -> void:
     site = data
@@ -19,36 +28,61 @@ func build(data: TonsaiSiteData) -> void:
     _boundaries()
 
 func _lighting() -> void:
-    var sky_mat := PanoramaSkyMaterial.new()
-    sky_mat.panorama = load("res://world/assets/sunflowers-sky.jpg")
-    var sky := Sky.new()
-    sky.sky_material = sky_mat
-    sky.radiance_size = Sky.RADIANCE_SIZE_64
-    sky.process_mode = Sky.PROCESS_MODE_QUALITY
+    _sky.radiance_size = Sky.RADIANCE_SIZE_64
+    _sky.process_mode = Sky.PROCESS_MODE_QUALITY
     var world := WorldEnvironment.new()
-    world.environment = Environment.new()
-    var env := world.environment
-    env.background_mode = Environment.BG_SKY
-    env.sky = sky
-    env.sky_rotation.y = deg_to_rad(78)
-    env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-    env.ambient_light_color = Color("#cad5df")
-    env.ambient_light_energy = 0.47
-    env.fog_enabled = true
-    env.fog_light_color = Color("#a8bfc4")
-    env.fog_density = 0.0022
-    env.fog_sky_affect = .10
+    atmosphere = Environment.new()
+    world.environment = atmosphere
+    atmosphere.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+    atmosphere.fog_enabled = true
     add_child(world)
     sun = DirectionalLight3D.new()
-    sun.rotation_degrees = Vector3(-37, -116, 0)
-    sun.light_energy = .84
-    sun.light_color = Color("#fff0da")
     sun.shadow_enabled = true
     sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
     sun.directional_shadow_max_distance = 37
     sun.shadow_bias = 0.10
     sun.shadow_normal_bias = 0.8
     add_child(sun)
+    set_sky_preset(SkyPreset.CLEAR)
+
+func set_sky_preset(preset: SkyPreset) -> void:
+    sky_preset = preset
+    var night := preset == SkyPreset.NIGHT
+    var cloudy := preset == SkyPreset.CLOUDY
+    atmosphere.background_mode = Environment.BG_COLOR if night else Environment.BG_SKY
+    atmosphere.background_color = Color("#151d34")
+    if night:
+        _sky.sky_material = null
+    else:
+        var panorama := PanoramaSkyMaterial.new()
+        panorama.panorama = load(PANORAMAS[preset]) as Texture2D
+        _sky.sky_material = panorama
+    atmosphere.sky = null if night else _sky
+    atmosphere.sky_rotation = Vector3(0, deg_to_rad(78.0 if cloudy else 149.0), 0)
+    atmosphere.ambient_light_color = Color("#8da5d2") if night else Color("#cad5df")
+    atmosphere.ambient_light_energy = .20 if night else (.47 if cloudy else .43)
+    sun.rotation_degrees = Vector3(-37, -116, 0) if cloudy else Vector3(-53, -118, 0)
+    sun.light_color = Color("#a7bbe9") if night else Color("#fff0da")
+    sun.light_energy = .10 if night else (.84 if cloudy else .99)
+    _apply_fog()
+
+func _process(delta: float) -> void:
+    var camera := get_viewport().get_camera_3d()
+    if not is_instance_valid(camera):
+        return
+    var at := camera.global_position
+    var depth := water.level - at.y if water.depth_at(at) > .08 else 0.0
+    var target := smoothstep(-.05, .55, depth)
+    if absf(target - _submersion) > .001:
+        _submersion = lerpf(_submersion, target, 1.0 - exp(-delta * 13.0))
+        _apply_fog()
+
+func _apply_fog() -> void:
+    var night := sky_preset == SkyPreset.NIGHT
+    var above := NIGHT_FOG if night else DAY_FOG
+    atmosphere.fog_light_color = above.lerp(WATER_FOG.darkened(.55) if night else WATER_FOG, _submersion)
+    atmosphere.fog_density = lerpf(.0035 if night else .0022, .112, _submersion)
+    atmosphere.fog_sky_affect = lerpf(.10, 1.0, _submersion)
 
 func _land() -> void:
     var material := ShaderMaterial.new()
