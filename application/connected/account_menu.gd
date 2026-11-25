@@ -6,7 +6,8 @@ var _mode := ""
 var _address := ""
 var _fields: Dictionary = {}
 var _cooldown_until := 0
-var _cloud_items: Array = []
+var _page_generation := 0
+var _cloud_from_slots := false
 var _profile_data := {}
 var _working := false
 
@@ -14,20 +15,31 @@ func _init(app: SurvivorGameApp) -> void:
     _app = app
 
 func open() -> void:
+    _cloud_from_slots = false
     _address = ""
     if _app.auth.account.is_empty():
         _guest()
     else:
         _dashboard()
 
+func open_from_load() -> void:
+    _cloud_from_slots = true
+    if _app.cloud.store == null:
+        _address = ""
+        _form("login")
+    else:
+        _list()
+
 func _page(mode: String, title: String, notice := "") -> void:
+    _page_generation += 1
     _mode = mode
     _fields.clear()
     _app._menu(SurvivorGameApp.Screen.ACCOUNT, title, notice)
 
 func _button(key: String, name: String, action: Callable) -> void:
     var button := _app._button(key, name, action)
-    button.custom_minimum_size.y = 42
+    button.custom_minimum_size.y = 44
+    button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 
 func _field(key: String, label: String, kind: LineEdit.VirtualKeyboardType, initial := "") -> void:
     var field_label := Label.new()
@@ -112,7 +124,10 @@ func _cancel_form() -> void:
         return
     if _app.auth.recovery_pending():
         _app.auth.logout()
-    open()
+    if _cloud_from_slots:
+        _app._slots(false)
+    else:
+        open()
 
 func _text(key: String) -> String:
     var field: LineEdit = _fields.get(key)
@@ -174,7 +189,10 @@ func _submit() -> void:
             _guest("Password updated. Sign in with your new password.")
         _:
             _address = ""
-            _dashboard()
+            if _cloud_from_slots:
+                _list()
+            else:
+                _dashboard()
 
 func _resend() -> void:
     if _working:
@@ -200,7 +218,7 @@ func _dashboard(notice := "") -> void:
     label.text = _app.auth.email
     label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
     _app._stack.add_child(label)
-    _button("cloud_list", "Cloud Saves", _list)
+    _button("cloud_list", "Cloud Saves", _open_from_profile)
     _button("guest_import", "Import a Guest Season", _imports)
     _button("edit_profile", "Name & Portable Preferences", _profile)
     _button("sign_out", "Sign Out", _sign_out)
@@ -216,35 +234,67 @@ func _sign_out() -> void:
         return
     var result := await _app.auth.logout()
     _working = false
-    _cloud_items.clear()
     _profile_data.clear()
     _guest("Signed out." if result.ok else "Signed out on this device. Server revocation could not be confirmed.")
 
-func _list() -> void:
-    if not _begin():
+func _open_from_profile() -> void:
+    _cloud_from_slots = false
+    _list()
+
+func _leave_cloud() -> void:
+    if _cloud_from_slots:
+        _app._slots(false)
+    else:
+        _dashboard()
+
+func _cloud_navigation(loading: bool) -> void:
+    var row := HBoxContainer.new()
+    _app._stack.add_child(row)
+    var refresh := _app._button("refresh", "Refresh", _list, row)
+    refresh.disabled = loading
+    refresh.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    var back := _app._button("back", "Back", _leave_cloud, row)
+    back.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+func _list(notice := "") -> void:
+    if _working:
         return
+    _page("cloud", "Cloud Saves", "Loading cloud saves…")
+    _cloud_navigation(true)
+    var generation := _page_generation
+    var epoch := _app.auth.epoch
     var result := await _app.cloud.call_data("list")
-    _working = false
-    if _app.auth.account.is_empty():
-        _guest("Sign in again to access cloud saves.")
+    if generation != _page_generation or _app.screen != SurvivorGameApp.Screen.ACCOUNT:
         return
-    _cloud_items = result.get("items", [])
-    _page("cloud", "Cloud Saves", "" if result.status == "listed" else message(result.status))
-    if result.status == "listed" and _cloud_items.is_empty():
-        _app._status.text = "No cloud saves yet."
-    for index in _cloud_items.size():
-        var row: Dictionary = _cloud_items[index]
-        _button("cloud%d" % (index + 1), _metadata(row), _details.bind(row))
+    if epoch != _app.auth.epoch or _app.cloud.store == null:
+        if _cloud_from_slots:
+            _app._slots(false)
+            _app._status.text = "Sign in again to access cloud saves."
+        else:
+            _guest("Sign in again to access cloud saves.")
+        return
+
+    var caption := ""
+    var items: Array = []
+    if result.status == "listed":
+        items = result.items
+        caption = "No cloud saves yet." if items.is_empty() else "%d cloud save%s" % [
+            items.size(), "" if items.size() == 1 else "s"]
+    else:
+        caption = "Could not load cloud saves. " + message(result.status)
+    if not notice.is_empty():
+        caption = notice + "\n" + caption
+    _page("cloud", "Cloud Saves", caption)
+    _cloud_navigation(false)
+    for index in items.size():
+        var row: Dictionary = items[index]
+        _button("cloud%d" % (index + 1), "Season %s · Day %d · Cloud r%d" % [
+            row.season_id.left(8), int(row.day), int(row.revision)], _details.bind(row))
     for slot in range(1, LocalSaveProvider.SLOTS + 1):
         var sync := _app.cloud.record(slot)
-        var local := _app.saves.inspect(slot)
         if sync.has("blocked") or sync.get("paused", false):
             _button("conflict%d" % slot, "Local slot %d · %s" % [slot,
                 message(sync.get("blocked", "local_only"))], _conflict.bind(slot))
-        elif local.status == "valid" and int(local.save_revision) != int(sync.get("ack", 0)):
-            _info("Local slot %d · waiting to sync" % slot)
-    _button("refresh", "Refresh", _list)
-    _button("back", "Back", _dashboard)
 
 func _details(row: Dictionary) -> void:
     _page("cloud_detail", "Cloud Season", _metadata(row))
@@ -264,8 +314,7 @@ func _delete_cloud(row: Dictionary) -> void:
         return
     var result := await _app.cloud.delete_cloud(row.id, int(row.revision))
     _working = false
-    await _list()
-    _app._status.text = message(result)
+    _list(message(result))
 
 func _imports() -> void:
     _page("import", "Import a Guest Season", "Choose a season from this browser. Its guest checkpoint will stay here.")
@@ -323,7 +372,12 @@ func _restore_slot(id: String, revision: int, slot: int) -> void:
     var result := await _app.cloud.restore(slot, id, revision)
     _working = false
     if result == "restored":
-        _app._main("Cloud season restored to slot %d." % slot)
+        var notice := "Cloud season restored to slot %d." % slot
+        if _cloud_from_slots:
+            _app._slots(false)
+            _app._status.text = notice
+        else:
+            _app._main(notice)
     else:
         _app._status.text = message(result)
 
@@ -348,7 +402,7 @@ func _resolve(slot: int, choice: String, revision: int) -> void:
         return
     var result := await _app.cloud.resolve(slot, choice, revision)
     _working = false
-    _dashboard(message(result))
+    _list(message(result))
 
 func _profile() -> void:
     if not _begin():
@@ -423,6 +477,7 @@ static func message(code: String, http_status := 0) -> String:
         "already_imported": return "This season already exists in the account."
         "already_cached": return "This cloud save already has a local slot."
         "invalid_snapshot": return "The checkpoint could not be validated."
+        "invalid_response": return "The server returned invalid data."
         "save_too_large": return "Checkpoint exceeds the cloud limit. Local progress is saved."
         "pending_offline": return "Saved locally. Cloud sync will retry."
         "local_changed": return "The local checkpoint changed. Choose it again."

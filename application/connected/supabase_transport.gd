@@ -15,6 +15,9 @@ class Exchange extends RefCounted:
 
 func send(path: String, method: HTTPClient.Method, body: Dictionary = {}, token := "") -> Dictionary:
     var request := HTTPRequest.new()
+    # Browser Fetch already decompresses responses. If the gateway exposes the
+    # Content-Encoding header, HTTPRequest would try to decompress them again.
+    request.accept_gzip = not OS.has_feature("web")
     request.timeout = 15.0
     request.max_redirects = 0
     request.body_size_limit = RESPONSE_BYTES
@@ -22,7 +25,7 @@ func send(path: String, method: HTTPClient.Method, body: Dictionary = {}, token 
     var exchange := Exchange.new()
     _requests[request] = exchange
     request.request_completed.connect(_completed.bind(request), CONNECT_ONE_SHOT)
-    var headers := PackedStringArray(["apikey: " + publishable_key, "Content-Type: application/json"])
+    var headers := PackedStringArray(["apikey: " + publishable_key, "Content-Type: application/json", "Accept: application/json"])
     if not token.is_empty():
         headers.append("Authorization: Bearer " + token)
     var content := "" if method == HTTPClient.METHOD_GET else JSON.stringify(body, "", true, true)
@@ -58,7 +61,10 @@ func _completed(result: int, status: int, headers: PackedStringArray, body: Pack
             retry_after = clampi(value.to_int(), 0, 86400) if value.is_valid_int() else 60
     var ok := status >= 200 and status < 300 and (body.is_empty() or parsed is Dictionary or parsed is Array)
     var code := ""
-    if not ok and parsed is Dictionary:
-        code = String(parsed.get("error_code", parsed.get("code", "")))
+    if not ok:
+        if status >= 200 and status < 300:
+            code = "invalid_response"
+        elif parsed is Dictionary:
+            code = String(parsed.get("error_code", parsed.get("code", "")))
     exchange.finished.emit({"ok": ok, "status": status, "code": code,
         "retry_after": retry_after, "data": parsed if ok else null})

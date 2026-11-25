@@ -12,6 +12,7 @@ var store: LocalDataStore
 var saves: LocalSaveProvider
 var _due: Dictionary = {}
 var _failures: Dictionary = {}
+var _failed_checkpoint: Dictionary = {}
 var _busy := false
 
 func _init(authentication: SurvivorAuthService) -> void:
@@ -22,6 +23,7 @@ func bind(cache: LocalDataStore, provider: LocalSaveProvider) -> void:
     saves = provider
     _due.clear()
     _failures.clear()
+    _failed_checkpoint.clear()
     if saves != null:
         for slot in range(1, LocalSaveProvider.SLOTS + 1):
             if saves.inspect(slot).status == "valid":
@@ -32,9 +34,40 @@ func call_data(action: String, args := {}) -> Dictionary:
     if not result.ok:
         return {"status": result.code if not String(result.code).is_empty() else "unavailable",
             "retry_after": result.get("retry_after", 0)}
-    if result.data is Array and action == "list":
-        return {"status": "listed", "items": result.data}
-    return result.data if result.data is Dictionary else {"status": "unavailable"}
+    if action == "list":
+        return _decode_list(result.data)
+    return result.data if result.data is Dictionary else {"status": "invalid_response"}
+
+static func _decode_list(data: Variant) -> Dictionary:
+    if data is not Array:
+        return {"status": "invalid_response"}
+    for row: Variant in data:
+        if row is not Dictionary or row.get("id") is not String \
+                or not SurvivorIdentityService.valid_account(row.id) \
+                or not GameStateData.identity(row.get("season_id")) \
+                or not GameStateData.integer(row.get("revision"), 1, SaveCodec.MAX_REVISION) \
+                or not GameStateData.integer(row.get("day"), 1, 416667) \
+                or not GameStateData.integer(row.get("tick"), 0, 1_000_000_000):
+            return {"status": "invalid_response"}
+    return {"status": "listed", "items": data}
+
+func slot_status(index: int, entry: Dictionary) -> String:
+    if store == null:
+        return "Saved locally only"
+    var sync := record(index)
+    var revision := int(entry.save_revision)
+    if sync.get("season") == entry.state.season_id:
+        if sync.get("blocked") in ["conflict", "missing"]:
+            return "Conflict detected"
+        if sync.has("blocked"):
+            return "Sync failed"
+        if sync.get("paused", false):
+            return "Saved locally only"
+        if int(sync.get("revision", 0)) > 0 and int(sync.get("ack", 0)) == revision:
+            return "Synced to cloud"
+    if _failed_checkpoint.get(index) == entry.fingerprint:
+        return "Sync failed"
+    return "Sync pending"
 
 func schedule(slot: int, immediate := false) -> void:
     if store == null:
@@ -72,6 +105,7 @@ func write_record(slot: int, value: Dictionary) -> bool:
 func reset(slot: int) -> bool:
     _due.erase(slot)
     _failures.erase(slot)
+    _failed_checkpoint.erase(slot)
     # Writing a newer empty record prevents a previous queue from attaching
     # itself to the next season placed in this local slot.
     return store == null or write_record(slot, {})
@@ -127,6 +161,7 @@ func restore(slot: int, id: String, requested_revision: int, replace_local := fa
         return "local_storage"
     _due.erase(slot)
     _failures.erase(slot)
+    _failed_checkpoint.erase(slot)
     return "restored"
 
 func resolve(slot: int, choice: String, confirmed_revision: int) -> String:
@@ -147,6 +182,7 @@ func resolve(slot: int, choice: String, confirmed_revision: int) -> String:
     if not write_record(slot, sync):
         return "local_storage"
     _failures.erase(slot)
+    _failed_checkpoint.erase(slot)
     schedule(slot, true)
     return "queued"
 
@@ -196,6 +232,7 @@ func _sync_slot(slot: int) -> void:
         var raw := SaveCodec.encode(local.state, int(local.save_revision), int(local.timestamp))
         if raw.to_utf8_buffer().size() > LIMIT:
             _busy = false
+            _failed_checkpoint[slot] = local.fingerprint
             updated.emit(slot, "save_too_large")
             return
         if not sync.has("id"):
@@ -205,6 +242,7 @@ func _sync_slot(slot: int) -> void:
         sync.pending = int(local.save_revision)
         if not write_record(slot, sync):
             _busy = false
+            _failed_checkpoint[slot] = local.fingerprint
             updated.emit(slot, "local_storage")
             return
     var args := {"id": sync.id, "expected": int(sync.get("revision", 0)),
@@ -219,6 +257,7 @@ func _sync_slot(slot: int) -> void:
         return
     if status == "saved":
         _failures.erase(slot)
+        _failed_checkpoint.erase(slot)
         sync.revision = int(result.revision)
         sync.ack = int(sync.pending)
         sync.erase("guest_import")
@@ -240,6 +279,8 @@ func _sync_slot(slot: int) -> void:
         var delay := maxi(int(result.get("retry_after", 0)), mini(300, 5 * (1 << count)))
         _due[slot] = Time.get_ticks_msec() + delay * 1000 + randi_range(100, 1200)
         status = "pending_offline"
+    if status == "local_storage":
+        _failed_checkpoint[slot] = local.fingerprint
     updated.emit(slot, status)
 
 func _clear_operation(sync: Dictionary) -> void:

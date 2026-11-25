@@ -26,7 +26,8 @@ def review(page, condition):
 
 def button(page, name):
     data = review(page, f'app.actions["{name}"]').json_value()
-    page.touchscreen.tap(data[0] * VIEWPORT["width"], data[1] * VIEWPORT["height"])
+    viewport = page.viewport_size
+    page.touchscreen.tap(data[0] * viewport["width"], data[1] * viewport["height"])
 
 
 def field(page, name, text):
@@ -66,8 +67,8 @@ def remote_snapshot(backend, session):
     return row, json.loads(json.loads(snapshot)["payload"])["state"]
 
 
-def boot(browser, base, backend, strategy, guest_fixture=None):
-    context = browser.new_context(viewport=VIEWPORT, has_touch=True)
+def boot(browser, base, backend, strategy, guest_fixture=None, viewport=VIEWPORT):
+    context = browser.new_context(viewport=viewport, has_touch=True)
     if guest_fixture is not None:
         state = json.loads(json.loads(guest_fixture)["payload"])["state"]
         for key, value in {
@@ -85,7 +86,22 @@ def boot(browser, base, backend, strategy, guest_fixture=None):
                 "apikey": backend.key})
             route.fulfill(response=response)
 
-    context.route(PRODUCTION + "/**", relay)
+    if strategy.get("wire_url"):
+        # Route through the actual loopback HTTP server before Fetch sees the
+        # response. Playwright's fulfill does not perform network decompression.
+        context.add_init_script("""(() => {
+            const project = %s, gateway = %s;
+            const nativeFetch = window.fetch.bind(window);
+            window.fetch = (resource, options) => {
+                if (typeof resource === 'string') {
+                    const url = new URL(resource, document.baseURI);
+                    if (url.origin === project) resource = gateway + url.pathname + url.search;
+                }
+                return nativeFetch(resource, options);
+            };
+        })()""" % (json.dumps(PRODUCTION), json.dumps(strategy["wire_url"])))
+    elif backend.url != PRODUCTION:
+        context.route(PRODUCTION + "/**", relay)
     page = context.new_page()
     page.set_default_timeout(120000)
     page.on("pageerror", lambda error: print("Browser runtime error:", str(error).splitlines()[0]))

@@ -29,7 +29,8 @@ var _hide: JavaScriptObject
 var _show: JavaScriptObject
 var _visual_resize: JavaScriptObject
 var _account_panel: PanelContainer
-var _account_scroll: ScrollContainer
+var _account_scroll: SurvivorMenuScroll
+var _slot_sync_labels: Dictionary = {}
 var _slot_mode := false
 var _confirm_slot := 0
 var _exit_confirmation := false
@@ -174,6 +175,10 @@ func _slots(creating: bool) -> void:
 
 func _draw_slots(message := "") -> void:
     _menu(Screen.SLOTS, "New Game" if _slot_mode else "Load Game", message)
+    if not _slot_mode:
+        var cloud_button := _button("load_cloud",
+            "Cloud Saves" if cloud.store != null else "Sign In for Cloud Saves", _accounts.open_from_load)
+        cloud_button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
     for index in range(1, LocalSaveProvider.SLOTS + 1):
         var entry := saves.inspect(index)
         var row := HBoxContainer.new()
@@ -187,12 +192,24 @@ func _draw_slots(message := "") -> void:
             info = "Different guest"
         var can_start: bool = entry.status == "empty" if _slot_mode else _owned(entry)
         var action := _new.bind(index) if _slot_mode else _load.bind(index)
-        var pick := _button("slot%d" % index, "Slot %d   %s" % [index, info], action, row)
-        pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        var column := VBoxContainer.new()
+        column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        row.add_child(column)
+        var pick := _button("slot%d" % index, "Slot %d · %s" % [index, info], action, column)
+        pick.alignment = HORIZONTAL_ALIGNMENT_LEFT
+        pick.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
         pick.disabled = not can_start
+        if _owned(entry):
+            var badge := Label.new()
+            badge.text = cloud.slot_status(index, entry)
+            badge.add_theme_font_size_override("font_size", 16)
+            column.add_child(badge)
+            _slot_sync_labels[index] = badge
         if not entry.status in ["empty", "unavailable"]:
-            _button("delete%d" % index, "Confirm delete" if _confirm_slot == index else "Delete",
+            var erase := _button("delete%d" % index, "Confirm" if _confirm_slot == index else "Delete",
                 _delete.bind(index, String(entry.get("fingerprint", ""))), row)
+            erase.custom_minimum_size.x = 80
+            erase.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
     _button("back", "Back", _main)
 
 var _delete_fingerprint := ""
@@ -342,6 +359,7 @@ func _leave() -> void:
 func _menu(next: Screen, title: String, message: String) -> void:
     screen = next
     _actions.clear()
+    _slot_sync_labels.clear()
     _account_panel = null
     _account_scroll = null
     for child: Node in _ui.get_children():
@@ -367,8 +385,8 @@ func _menu(next: Screen, title: String, message: String) -> void:
     _stack = VBoxContainer.new()
     _stack.custom_minimum_size.x = 300 if next == Screen.SESSION else 450
     _stack.add_theme_constant_override("separation", 7)
-    if next == Screen.ACCOUNT:
-        var scroll := ScrollContainer.new()
+    if next in [Screen.ACCOUNT, Screen.SLOTS]:
+        var scroll := SurvivorMenuScroll.new()
         scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
         scroll.follow_focus = true
         _account_panel = panel
@@ -388,6 +406,8 @@ func _menu(next: Screen, title: String, message: String) -> void:
         heading.text = title
         heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
         heading.add_theme_font_size_override("font_size", 31)
+        if next in [Screen.ACCOUNT, Screen.SLOTS]:
+            heading.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
         _stack.add_child(heading)
     _status.text = message
     _status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -399,8 +419,9 @@ func _menu(next: Screen, title: String, message: String) -> void:
 func _position_panel(panel: PanelContainer, bottom: bool) -> void:
     var viewport := _ui.size
     var height := _account_visible_height() if panel == _account_panel else viewport.y
-    var y := height - panel.size.y - 18.0 if bottom else maxf(0.0, (height - panel.size.y) * .5)
-    panel.position = Vector2((viewport.x - panel.size.x) * .5, y)
+    var displayed_size := panel.size * panel.scale
+    var y := height - displayed_size.y - 18.0 if bottom else maxf(0.0, (height - displayed_size.y) * .5)
+    panel.position = Vector2((viewport.x - displayed_size.x) * .5, y)
 
 func _visual_viewport_changed(_args: Array) -> void:
     _update_account_layout()
@@ -414,8 +435,15 @@ func _account_visible_height() -> float:
 func _update_account_layout() -> void:
     if _account_panel == null:
         return
-    _account_scroll.custom_minimum_size = Vector2(minf(480.0, _ui.size.x - 40.0),
-        maxf(110.0, minf(590.0, _account_visible_height() - 36.0)))
+    # Express menu layout in CSS pixels on Web so portrait canvas stretching
+    # does not reduce the account text or tap targets to half size.
+    var width := _ui.size.x
+    if OS.has_feature("web"):
+        width = float(JavaScriptBridge.get_interface("window").innerWidth)
+    var content_scale := maxf(0.1, _ui.size.x / maxf(1.0, width))
+    _account_panel.scale = Vector2.ONE * content_scale
+    _account_scroll.custom_minimum_size = Vector2(clampf(width - 56.0, 140.0, 560.0),
+        clampf(_account_visible_height() / content_scale - 40.0, 90.0, 590.0))
     _account_panel.reset_size()
     _position_panel(_account_panel, false)
 
@@ -443,7 +471,13 @@ func _identity_changed() -> void:
     cloud.bind(active_store if signed_in else null, saves if signed_in else null)
     if changed_namespace and screen == Screen.SESSION:
         _main("Session expired. Sign in to resume your account saves.")
+    elif changed_namespace and screen == Screen.SLOTS:
+        _slots(_slot_mode)
 
 func _cloud_updated(index: int, status: String) -> void:
+    if screen == Screen.SLOTS and _slot_sync_labels.has(index):
+        var entry := saves.inspect(index)
+        if _owned(entry):
+            _slot_sync_labels[index].text = cloud.slot_status(index, entry)
     if session != null and slot == index and screen == Screen.SESSION:
         _status.text = "Slot %d · %s" % [index, SurvivorAccountMenu.message(status)]
