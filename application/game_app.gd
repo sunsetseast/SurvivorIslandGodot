@@ -113,6 +113,8 @@ func _suspend(value: bool) -> void:
     if suspended == value:
         return
     suspended = value
+    if value and _account_scroll != null:
+        _account_scroll.cancel_touch()
     if locations.camp == null:
         return
     locations.camp.hud.touch.cancel()
@@ -473,6 +475,8 @@ func _identity_changed() -> void:
         _main("Session expired. Sign in to resume your account saves.")
     elif changed_namespace and screen == Screen.SLOTS:
         _slots(_slot_mode)
+    elif changed_namespace and not signed_in and screen == Screen.ACCOUNT:
+        _accounts.account_ended()
 
 func _cloud_updated(index: int, status: String) -> void:
     if screen == Screen.SLOTS and _slot_sync_labels.has(index):

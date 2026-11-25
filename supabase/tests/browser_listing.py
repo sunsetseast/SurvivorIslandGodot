@@ -9,12 +9,13 @@ from http.server import BaseHTTPRequestHandler, SimpleHTTPRequestHandler, Thread
 import json
 import os
 from pathlib import Path
+from queue import Empty, Queue
 from threading import Thread
 from uuid import uuid4
 
 from playwright.sync_api import sync_playwright
 
-from browser_sync import BROWSER_FLAGS, PRODUCTION, boot, button, field, local_snapshot, login, review
+from browser_sync import BROWSER_FLAGS, boot, button, field, local_snapshot, login, review
 from integration import Backend
 
 PORTRAIT = {"width": 390, "height": 844}
@@ -40,14 +41,27 @@ class GzipListingGateway(BaseHTTPRequestHandler):
 
     def do_POST(self):
         body = self.rfile.read(int(self.headers["Content-Length"]))
+        is_listing = (self.path == "/rest/v1/rpc/player_data" and json.loads(body).get("action") == "list")
+        if is_listing:
+            try:
+                status, data = self.server.list_faults.get_nowait()
+            except Empty:
+                pass
+            else:
+                self.send_response(status)
+                self.cors()
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
         headers = {k: self.headers[k] for k in ("Authorization", "Content-Type", "apikey") if k in self.headers}
         connection = HTTPConnection("127.0.0.1", 54321, timeout=15)
         try:
             connection.request("POST", self.path, body, headers)
             response = connection.getresponse()
             data = response.read()
-            compressed = (response.status == 200 and self.path == "/rest/v1/rpc/player_data"
-                          and json.loads(body).get("action") == "list")
+            compressed = response.status == 200 and is_listing
             self.send_response(response.status)
             self.cors()
             self.send_header("Content-Type", response.getheader("Content-Type", "application/json"))
@@ -122,10 +136,25 @@ def touch_scroll(page):
         })
     cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
     review(page, f"app.actions.cloud3 && !app.actions.restore && app.actions.cloud3[1] * innerHeight < {KEYBOARD_HEIGHT}")
+    button(page, "cloud3")
+    review(page, "app.actions.restore && !app.actions.cloud3")
     page.evaluate("""() => {
         delete visualViewport.height;
         visualViewport.dispatchEvent(new Event('resize'));
     }""")
+
+
+def check_failed_refresh(page, faults, status, body):
+    top = review(page, "app.actions.cloud1").json_value()[1]
+    faults.put((status, body))
+    with page.expect_response(is_list) as pending:
+        button(page, "refresh")
+    assert pending.value.status == status
+    # The error and last-loaded notice add lines above the retained rows.
+    review(page, f"app.actions.cloud1?.[1] > {top} && app.actions.cloud2 && app.actions.cloud3")
+    button(page, "cloud1")
+    assert len(list_from(page, "refresh")) == 3
+    review(page, f"app.actions.cloud1?.[1] <= {top}")
 
 
 def run(backend, session, email, password, build, chromium, fixture):
@@ -136,11 +165,10 @@ def run(backend, session, email, password, build, chromium, fixture):
         server = scope.enter_context(ThreadingHTTPServer(
             ("127.0.0.1", 0), partial(SimpleHTTPRequestHandler, directory=str(build))))
         playwright = scope.enter_context(sync_playwright())
-        strategy = {"offline": False}
-        if backend.url != PRODUCTION:
-            proxy = scope.enter_context(ThreadingHTTPServer(("127.0.0.1", 0), GzipListingGateway))
-            Thread(target=proxy.serve_forever, daemon=True).start()
-            strategy["wire_url"] = f"http://127.0.0.1:{proxy.server_port}"
+        proxy = scope.enter_context(ThreadingHTTPServer(("127.0.0.1", 0), GzipListingGateway))
+        proxy.list_faults = Queue()
+        Thread(target=proxy.serve_forever, daemon=True).start()
+        strategy = {"offline": False, "wire_url": f"http://127.0.0.1:{proxy.server_port}"}
         Thread(target=server.serve_forever, daemon=True).start()
         base = f"http://127.0.0.1:{server.server_port}/?review"
         browser = playwright.chromium.launch(executable_path=chromium, args=BROWSER_FLAGS)
@@ -156,6 +184,8 @@ def run(backend, session, email, password, build, chromium, fixture):
         assert {row["id"] for row in rows} == set(saved)
         review(portrait, "app.actions.cloud1 && app.actions.cloud2 && app.actions.cloud3")
         assert portrait.evaluate("JSON.parse(window.survivorApp).actions.cloud3[1] < 1")
+        check_failed_refresh(portrait, proxy.list_faults, 200, b'{"status":"listed","items":[]}')
+        check_failed_refresh(portrait, proxy.list_faults, 503, b'{"message":"Unavailable"}')
         key = rows[0]["id"]
         snapshot = saved[key][1]
         upload(backend, session, snapshot, key, expected=1)
@@ -169,28 +199,24 @@ def run(backend, session, email, password, build, chromium, fixture):
         second, landscape, _ = boot(browser, base, backend, strategy, viewport=LANDSCAPE)
         account = session["user"]["id"]
         assert local_snapshot(landscape, account) is None, "Independent browser should start with no local save"
-        assert select_from_load(landscape, email, password)[0]["id"] == key
+        landscape_rows = select_from_load(landscape, email, password)
+        assert landscape_rows[0]["id"] == key and len(landscape_rows) == 3
         review(landscape, "app.actions.cloud3")
         touch_scroll(landscape)
-        # Refresh resets the list to its top. The shortened viewport check above
-        # reached the last row using touch without opening a save by accident.
-        landscape.mouse.wheel(0, -500)
-        list_from(landscape, "refresh")
-        button(landscape, "cloud1")
         button(landscape, "restore")
         button(landscape, "destination1")
         review(landscape, 'app.screen === "SLOTS"')
-        assert local_snapshot(landscape, account) == json.loads(json.loads(snapshot)["payload"])["state"]
+        last_snapshot = saved[landscape_rows[2]["id"]][1]
+        assert local_snapshot(landscape, account) == json.loads(json.loads(last_snapshot)["payload"])["state"]
         second.close()
         browser.close()
 
     for key, (revision, _) in saved.items():
         status, data = backend.rpc("delete", {"id": key, "expected": revision}, session)
         assert status == 200 and data.get("status") == "deleted", "Disposable test save cleanup failed"
-    source = "Hosted PostgREST" if backend.url == PRODUCTION else "Local PostgREST with an exposed gzip header"
-    print(f"{source} returned an array. "
-          "Three saves appeared in portrait, Refresh picked up revision 2, touch scrolling reached the last row, "
-          "and a separate landscape browser restored the checkpoint from Load Game.")
+    print("Local PostgREST returned three gzip-compressed rows. Malformed HTTP 200 and HTTP 503 preserved the rows, "
+          "Refresh recovered and picked up revision 2, and an independent landscape browser scrolled, tapped, "
+          "and restored the last checkpoint from Load Game.")
 
 
 if __name__ == "__main__":
@@ -198,19 +224,12 @@ if __name__ == "__main__":
     parser.add_argument("build", type=Path)
     parser.add_argument("fixture", type=Path)
     parser.add_argument("--chromium")
-    parser.add_argument("--hosted", action="store_true",
-                        help="Use an empty verified disposable account supplied in private environment variables")
     args = parser.parse_args()
-    if args.hosted:
-        backend = Backend(PRODUCTION, os.environ["SURVIVOR_HOSTED_PUBLISHABLE_KEY"], "")
-        email = os.environ["SURVIVOR_HOSTED_TEST_EMAIL"]
-        password = os.environ["SURVIVOR_HOSTED_TEST_PASSWORD"]
-        session = backend.login(email, password)
-    else:
-        backend = Backend("http://127.0.0.1:54321", os.environ["SURVIVOR_TEST_PUBLIC_KEY"], "http://127.0.0.1:54324")
-        email = f"listing-{uuid4().hex}@example.test"
-        password = f"Listing-Temp!{uuid4().hex}"
-        session = backend.register(email, password)
-    run(backend, session, email, password, args.build.resolve(), args.chromium, args.fixture.read_text())
-    if not args.hosted:
+    backend = Backend("http://127.0.0.1:54321", os.environ["SURVIVOR_TEST_PUBLIC_KEY"], "http://127.0.0.1:54324")
+    email = f"listing-{uuid4().hex}@example.test"
+    password = f"Listing-Temp!{uuid4().hex}"
+    session = backend.register(email, password)
+    try:
+        run(backend, session, email, password, args.build.resolve(), args.chromium, args.fixture.read_text())
+    finally:
         backend.request("/functions/v1/delete-player", {"password": password}, session)

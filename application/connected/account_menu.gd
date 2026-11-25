@@ -259,29 +259,39 @@ func _cloud_navigation(loading: bool) -> void:
 func _list(notice := "") -> void:
     if _working:
         return
-    _page("cloud", "Cloud Saves", "Loading cloud saves…")
-    _cloud_navigation(true)
+    var refreshing := _app.screen == SurvivorGameApp.Screen.ACCOUNT and _mode == "cloud"
+    if refreshing:
+        var refresh: Button = _app._actions.refresh
+        refresh.disabled = true
+        for key: String in _app._actions:
+            if key.begins_with("cloud"):
+                _app._actions[key].disabled = true
+        _app._status.text = "Refreshing cloud saves…"
+        _page_generation += 1
+    else:
+        _page("cloud", "Cloud Saves", "Loading cloud saves…")
+        _cloud_navigation(true)
+        _cloud_conflicts()
     var generation := _page_generation
     var epoch := _app.auth.epoch
     var result := await _app.cloud.call_data("list")
-    if generation != _page_generation or _app.screen != SurvivorGameApp.Screen.ACCOUNT:
+    if generation != _page_generation or _app.screen != SurvivorGameApp.Screen.ACCOUNT or epoch != _app.auth.epoch:
         return
-    if epoch != _app.auth.epoch or _app.cloud.store == null:
-        if _cloud_from_slots:
-            _app._slots(false)
-            _app._status.text = "Sign in again to access cloud saves."
-        else:
-            _guest("Sign in again to access cloud saves.")
+    if _app.cloud.store == null:
+        account_ended()
         return
 
-    var caption := ""
-    var items: Array = []
-    if result.status == "listed":
-        items = result.items
-        caption = "No cloud saves yet." if items.is_empty() else "%d cloud save%s" % [
-            items.size(), "" if items.size() == 1 else "s"]
-    else:
-        caption = "Could not load cloud saves. " + message(result.status)
+    if result.status != "listed":
+        var caption := "Could not load cloud saves. " + message(result.status)
+        if _app._actions.has("cloud1"):
+            caption += "\nLast loaded saves are shown. Refresh to select one."
+        _app._status.text = caption if notice.is_empty() else notice + "\n" + caption
+        _app._actions.refresh.disabled = false
+        return
+
+    var items: Array = result.items
+    var caption := "No cloud saves yet." if items.is_empty() else "%d cloud save%s" % [
+        items.size(), "" if items.size() == 1 else "s"]
     if not notice.is_empty():
         caption = notice + "\n" + caption
     _page("cloud", "Cloud Saves", caption)
@@ -290,11 +300,23 @@ func _list(notice := "") -> void:
         var row: Dictionary = items[index]
         _button("cloud%d" % (index + 1), "Season %s · Day %d · Cloud r%d" % [
             row.season_id.left(8), int(row.day), int(row.revision)], _details.bind(row))
+    _cloud_conflicts()
+
+func _cloud_conflicts() -> void:
     for slot in range(1, LocalSaveProvider.SLOTS + 1):
         var sync := _app.cloud.record(slot)
         if sync.has("blocked") or sync.get("paused", false):
             _button("conflict%d" % slot, "Local slot %d · %s" % [slot,
                 message(sync.get("blocked", "local_only"))], _conflict.bind(slot))
+
+func account_ended() -> void:
+    if _app.screen != SurvivorGameApp.Screen.ACCOUNT or _mode != "cloud":
+        return
+    if _cloud_from_slots:
+        _app._slots(false)
+        _app._status.text = "Sign in again to access cloud saves."
+    else:
+        _guest("Sign in again to access cloud saves.")
 
 func _details(row: Dictionary) -> void:
     _page("cloud_detail", "Cloud Season", _metadata(row))

@@ -20,9 +20,13 @@ func _input(event: InputEvent) -> void:
             _start_y = _local_y(event.position)
             _start_scroll = scroll_vertical
         elif event.index == _finger and (not event.pressed or event.canceled):
+            if event.canceled:
+                cancel_touch()
+                return
             if _dragging:
                 propagate_notification(NOTIFICATION_SCROLL_END)
-                get_viewport().set_input_as_handled()
+            # The drag canceled the button press. Let the viewport receive the
+            # release so it can clear GUI touch focus for this finger.
             _finger = -1
             _dragging = false
     elif event is InputEventScreenDrag and event.index == _finger:
@@ -34,6 +38,15 @@ func _input(event: InputEvent) -> void:
             propagate_notification(NOTIFICATION_SCROLL_BEGIN)
         scroll_vertical = _start_scroll + roundi(travel)
         get_viewport().set_input_as_handled()
+
+func cancel_touch() -> void:
+    if _finger < 0:
+        return
+    if not _dragging:
+        propagate_notification(NOTIFICATION_SCROLL_BEGIN)
+    propagate_notification(NOTIFICATION_SCROLL_END)
+    _finger = -1
+    _dragging = false
 
 func _local_y(point: Vector2) -> float:
     return (get_global_transform_with_canvas().affine_inverse() * point).y
