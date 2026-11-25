@@ -23,12 +23,20 @@ mkdir -p "$stage/tonsai/shaders" "$stage/tonsai/generated"
 cp tonsai/*.gd tonsai/*.tscn "$stage/tonsai/"
 cp tonsai/shaders/*.gdshader "$stage/tonsai/shaders/"
 cp tools/tonsai/bake_nav.gd tools/tonsai/bake_server_collision.gd "$stage/tools/tonsai/"
-cp tests/tonsai_test.gd tests/application_test.gd tests/credential_test.gd tests/benchmark_test.gd "$stage/tests/"
+cp tests/tonsai_test.gd tests/application_test.gd tests/credential_test.gd tests/benchmark_test.gd tests/title_test.gd "$stage/tests/"
 cp character_lab/actor.gd "$stage/character_lab/"
 cp character_lab/assets/maeve.glb "$stage/character_lab/assets/"
 cp icon.svg "$stage/" 2>/dev/null || true
 # This stage is the sole export root. Source references and private likeness
 # files are outside the allowlist. Neither Phase 0 nor the lab is reconfigured.
+# Optional approved art/font stay outside Git and public artifacts.
+if [[ -n "${SURVIVOR_PRIVATE_UI:-}" ]]; then
+  python3 tools/tonsai/stage_private_ui.py "$SURVIVOR_PRIVATE_UI" "$stage/private_brand"
+fi
+if [[ -n "${SURVIVOR_PRIVATE_LOGO:-}" ]]; then
+  mkdir -p "$stage/private_brand"
+  cp "$SURVIVOR_PRIVATE_LOGO" "$stage/private_brand/logo.png"
+fi
 cp project.godot "$stage/"
 if [[ "${TONSAI_STAGE_ONLY:-0}" == 1 ]]; then
   cp native/development-icon.svg "$stage/icon.svg"
@@ -49,7 +57,7 @@ if [[ -n "${SURVIVOR_WSS_ENDPOINT:-}" ]]; then
   fi
   printf '\n[survivor]\nmultiplayer/endpoint="%s"\n' "$SURVIVOR_WSS_ENDPOINT" >> "$stage/project.godot"
 fi
-sed -e 's|^include_filter=""|include_filter="tonsai/generated/layout.json,tonsai/generated/heightfield.bin"|' \
+sed -e 's|^include_filter=""|include_filter="tonsai/generated/layout.json,tonsai/generated/heightfield.bin,application/presentation/fonts/LICENSE.txt,controllers/third_party/PHANTOM_CAMERA_LICENSE.txt"|' \
     -e 's|^exclude_filter=""|exclude_filter="tests/*,tools/*,tonsai/generated/server_collision.scn"|' \
     -e 's|html/experimental_virtual_keyboard=false|html/experimental_virtual_keyboard=true|' \
     export_presets.cfg > "$stage/export_presets.cfg"
@@ -82,6 +90,7 @@ cp "$stage/tonsai/generated/navigation.res" tonsai/generated/navigation.res
 if [[ "${TONSAI_STAGE_ONLY:-0}" == 1 ]]; then exit 0; fi
 run_godot --fixed-fps 60 --script res://tests/tonsai_test.gd
 run_godot --fixed-fps 60 --script res://tests/application_test.gd
+run_godot --script res://tests/title_test.gd
 run_godot --script res://tests/credential_test.gd
 run_godot --script res://tests/benchmark_test.gd
 run_godot --export-release Web "$output/index.html"

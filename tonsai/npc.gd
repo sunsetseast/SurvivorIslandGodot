@@ -39,8 +39,11 @@ func _create_label() -> void:
     identifier.text = display_name
     identifier.position.y = 1.92
     identifier.pixel_size = .0035
+    identifier.font = IslandTheme.font()
+    identifier.modulate = Color.WHITE
+    identifier.outline_modulate = Color.BLACK
     identifier.font_size = 45
-    identifier.outline_size = 8
+    identifier.outline_size = 5
     identifier.billboard = BaseMaterial3D.BILLBOARD_ENABLED
     identifier.visibility_range_end = 15.0
     add_child(identifier)
