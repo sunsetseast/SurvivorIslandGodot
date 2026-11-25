@@ -30,6 +30,14 @@ cp icon.svg "$stage/" 2>/dev/null || true
 # This stage is the sole export root. Source references and private likeness
 # files are outside the allowlist. Neither Phase 0 nor the lab is reconfigured.
 cp project.godot "$stage/"
+if [[ "${TONSAI_STAGE_ONLY:-0}" == 1 ]]; then
+  python3 - "$stage/project.godot" <<'NATIVE'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+path.write_text(path.read_text().replace("[rendering]", "[rendering]\ntextures/vram_compression/import_etc2_astc=true"))
+NATIVE
+fi
 if [[ "${SURVIVOR_DIAGNOSTICS:-0}" == 1 ]]; then
   printf '\n[survivor_diagnostics]\nenabled=true\nbuild_sha="%s"\n' "$(git rev-parse HEAD)" >> "$stage/project.godot"
 fi

@@ -82,8 +82,7 @@ jobs:
       - name: Export unsigned ARM64 AAB
         run: |
           mkdir -p build/android
-          "$GODOT_BIN" --headless --path build/tonsai-project --install-android-build-template
-          "$GODOT_BIN" --headless --path build/tonsai-project --export-release "Android Readiness" "$PWD/build/android/SurvivorIsland.aab"
+          timeout 600 "$GODOT_BIN" --headless --path build/tonsai-project --install-android-build-template --export-release "Android Readiness" "$PWD/build/android/SurvivorIsland.aab"
           unzip -l build/android/SurvivorIsland.aab | tee build/android/contents.txt
           grep 'base/lib/arm64-v8a/libgodot_android.so' build/android/contents.txt
       - uses: actions/upload-artifact@v4
