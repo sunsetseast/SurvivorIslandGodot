@@ -6,10 +6,14 @@ godot="${GODOT_BIN:-${XDG_BIN_HOME:-$HOME/.local/bin}/godot-4.7.2}"
 test "$("$godot" --version)" = "4.7.2.stable.official.ed1daf0bf"
 stage="$PWD/build/tonsai-project"
 output="$PWD/build/tonsai"
+if [[ "${TONSAI_PREPARE_SERVER:-0}" == "only" ]]; then
+  stage="$PWD/build/tonsai-bake-project"
+  output="$PWD/build/tonsai-bake-unused"
+fi
 rm -rf "$stage" "$output"
 mkdir -p "$stage/character_lab/assets" "$stage/tests" "$stage/tools/tonsai" "$output"
 touch build/.gdignore
-cp -R controllers simulation application persistence "$stage/"
+cp -R controllers simulation application persistence multiplayer "$stage/"
 mkdir -p "$stage/world/assets"
 cp world/water_surface.gd world/water.gdshader world/camp_fire.gd world/fire_flipbook.gdshader "$stage/world/"
 for asset in surface-swimming.res sunflowers-sky.jpg kloofendal-clear.jpg flame02.webp water-ripple.png seating_log.glb seat_stump.glb shore_rock.glb; do
@@ -18,7 +22,7 @@ done
 mkdir -p "$stage/tonsai/shaders" "$stage/tonsai/generated"
 cp tonsai/*.gd tonsai/*.tscn "$stage/tonsai/"
 cp tonsai/shaders/*.gdshader "$stage/tonsai/shaders/"
-cp tools/tonsai/bake_nav.gd "$stage/tools/tonsai/"
+cp tools/tonsai/bake_nav.gd tools/tonsai/bake_server_collision.gd "$stage/tools/tonsai/"
 cp tests/tonsai_test.gd tests/application_test.gd "$stage/tests/"
 cp character_lab/actor.gd "$stage/character_lab/"
 cp character_lab/assets/maeve.glb "$stage/character_lab/assets/"
@@ -26,8 +30,15 @@ cp icon.svg "$stage/" 2>/dev/null || true
 # This stage is the sole export root. Source references and private likeness
 # files are outside the allowlist. Neither Phase 0 nor the lab is reconfigured.
 cp project.godot "$stage/"
+if [[ -n "${SURVIVOR_WSS_ENDPOINT:-}" ]]; then
+  if [[ ! "$SURVIVOR_WSS_ENDPOINT" =~ ^wss://[a-zA-Z0-9.-]+(:[0-9]+)?/ws$ ]]; then
+    echo "SURVIVOR_WSS_ENDPOINT must be wss://your-host/ws" >&2
+    exit 1
+  fi
+  printf '\n[survivor]\nmultiplayer/endpoint="%s"\n' "$SURVIVOR_WSS_ENDPOINT" >> "$stage/project.godot"
+fi
 sed -e 's|^include_filter=""|include_filter="tonsai/generated/layout.json,tonsai/generated/heightfield.bin"|' \
-    -e 's|^exclude_filter=""|exclude_filter="tests/*,tools/*"|' \
+    -e 's|^exclude_filter=""|exclude_filter="tests/*,tools/*,tonsai/generated/server_collision.scn"|' \
     -e 's|html/experimental_virtual_keyboard=false|html/experimental_virtual_keyboard=true|' \
     export_presets.cfg > "$stage/export_presets.cfg"
 if [[ -n "${TONSAI_REFERENCE:-}" ]]; then
@@ -49,6 +60,12 @@ run_godot() {
 }
 run_godot --editor --import --quit
 run_godot --script res://tools/tonsai/bake_nav.gd
+if [[ "${TONSAI_PREPARE_SERVER:-0}" != 0 ]]; then
+  run_godot --script res://tools/tonsai/bake_server_collision.gd
+  if [[ "${TONSAI_PREPARE_SERVER:-0}" == "only" ]]; then
+    exit 0
+  fi
+fi
 cp "$stage/tonsai/generated/navigation.res" tonsai/generated/navigation.res
 run_godot --fixed-fps 60 --script res://tests/tonsai_test.gd
 run_godot --fixed-fps 60 --script res://tests/application_test.gd

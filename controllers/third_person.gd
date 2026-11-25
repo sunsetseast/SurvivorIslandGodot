@@ -31,6 +31,8 @@ var touch_direction := Vector2.ZERO:
             _stick_follows_camera = camera_relative_steering
 var run_toggled := false
 var locked := false
+var remote: RemoteGameSession
+var remote_actor := ""
 var travel_distance := 0.0
 var movement_intent := Vector3.ZERO
 var _stick_active := false
@@ -107,11 +109,46 @@ func _physics_process(delta: float) -> void:
     var previous := global_position
     var input := _local_input()
     movement_intent = Vector3(input.x, 0, input.y).rotated(Vector3.UP, _movement_yaw(delta))
-    walk_direction(movement_intent, run_toggled or Input.is_physical_key_pressed(KEY_SHIFT), delta,
-        not locked, sin(pitch) * maxf(0.0, -input.y))
+    var running := run_toggled or Input.is_physical_key_pressed(KEY_SHIFT)
+    var vertical := sin(pitch) * maxf(0.0, -input.y)
+    if remote != null:
+        remote.send_intent(movement_intent, running, dive_requested, vertical)
+        if not remote.active:
+            _reconcile(delta, true)
+            if not controller_b:
+                _update_camera(delta)
+            return
+    walk_direction(movement_intent, running, delta, not locked, vertical)
+    if remote != null:
+        _reconcile(delta, false)
     travel_distance += Vector2(global_position.x - previous.x, global_position.z - previous.z).length()
     if not controller_b:
         _update_camera(delta)
+
+func _reconcile(delta: float, frozen: bool) -> void:
+    var row := remote.movement(remote_actor)
+    if row.is_empty():
+        return
+    var authoritative := SurvivorMultiplayerWire.position_from(row)
+    var velocity_now := Vector3(row[6], row[7], row[8])
+    var lead := clampf(remote.movement_age() + remote.round_trip_ms * .0005 + .028, 0, .19)
+    var expected := authoritative if frozen else authoritative + velocity_now * lead
+    # Correct gradually while prediction is near the shared collision result.
+    var error := expected - global_position
+    if error.length_squared() > 4.0:
+        global_position = authoritative
+        velocity = velocity_now
+        planar = Vector3(velocity_now.x, 0, velocity_now.z)
+        locomotion = int(row[4])
+        restore_dive(row[5])
+        set_heading(row[3])
+        reset_physics_interpolation()
+    elif error.length_squared() > .008:
+        var correction := error * (1.0 - exp(-9.0 * delta))
+        if not test_move(global_transform, correction):
+            global_position += correction
+    if frozen:
+        planar = Vector3.ZERO
 
 func _process(delta: float) -> void:
     if not controller_b:
@@ -232,22 +269,7 @@ func _steer_planar(input: Vector3, speed: float, acceleration: float, braking: f
     if locked:
         planar = Vector3.ZERO
         return
-    if input.is_zero_approx():
-        planar = planar.move_toward(Vector3.ZERO, braking * delta)
-        return
-    var goal := atan2(input.x, input.z)
-    var current_speed := planar.length()
-    # Brake before a reversal, then steer velocity along the visible heading.
-    # Smaller turns stay in motion and accelerate as the heading lines up.
-    if absf(angle_difference(travel_heading, goal)) > PI * .5 and current_speed > .12:
-        planar = planar.move_toward(Vector3.ZERO, braking * 2.0 * delta)
-        return
-    set_heading(rotate_toward(travel_heading, goal, (13.0 if swimming() else 20.0) * delta))
-    var alignment := maxf(0.0, cos(angle_difference(travel_heading, goal)))
-    var target_speed := input.length() * speed * alignment
-    var rate := braking if target_speed < current_speed else acceleration
-    planar = Vector3(sin(travel_heading), 0, cos(travel_heading)) * move_toward(
-        current_speed, target_speed, rate * delta)
+    steer_player(input, speed, acceleration, braking, delta)
 
 func _unhandled_input(event: InputEvent) -> void:
     if event is InputEventMouseMotion and event.device != InputEvent.DEVICE_ID_EMULATION:

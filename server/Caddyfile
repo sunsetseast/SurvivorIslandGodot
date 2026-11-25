@@ -1,0 +1,20 @@
+{
+	admin off
+	auto_https off
+	grace_period 5s
+}
+:{$PORT} {
+	handle /health {
+		respond "ok" 200
+	}
+	@socket {
+		path /ws
+		header Upgrade websocket
+	}
+	handle @socket {
+		reverse_proxy 127.0.0.1:{$SURVIVOR_WS_PORT}
+	}
+	handle {
+		respond 404
+	}
+}

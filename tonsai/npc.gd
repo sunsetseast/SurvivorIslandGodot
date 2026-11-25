@@ -5,6 +5,8 @@ var contestant: String
 var display_name: String
 var session: GameSession
 var local_host: LocalGameSession
+var remote: RemoteGameSession
+var is_remote_human := false
 var destinations: Dictionary[StringName, Vector3]
 var agent: NavigationAgent3D
 var target_activity: StringName = &""
@@ -16,15 +18,23 @@ var _no_progress := 0.0
 var _approach := Vector3.INF
 
 func _ready() -> void:
-    collision_layer = 8
+    collision_layer = 8 if remote == null else 0
     collision_mask = 1 | 4
     super()
+    if remote == null:
+        _create_agent()
+    else:
+        set_physics_process(false)
+    _create_label()
+
+func _create_agent() -> void:
     agent = NavigationAgent3D.new()
     agent.radius = RADIUS
     agent.path_desired_distance = .55
     agent.target_desired_distance = .60
     agent.path_max_distance = 2.5
     add_child(agent)
+func _create_label() -> void:
     var identifier := Label3D.new()
     identifier.text = display_name
     identifier.position.y = 1.92
@@ -34,6 +44,27 @@ func _ready() -> void:
     identifier.billboard = BaseMaterial3D.BILLBOARD_ENABLED
     identifier.visibility_range_end = 15.0
     add_child(identifier)
+
+func _process(_delta: float) -> void:
+    if remote == null:
+        return
+    var frame := remote.interpolated(contestant)
+    if frame.is_empty():
+        return
+    position = frame.position
+    set_heading(frame.heading)
+    var activity := remote.activity("tonsai", contestant)
+    if frame.talking:
+        set_motion(&"Talk")
+    elif int(frame.locomotion) >= Locomotion.SWIM:
+        set_motion(&"Swim" if frame.speed > .16 else &"Tread")
+    elif frame.speed > .16:
+        set_motion(&"Jog" if frame.speed > 2.55 else &"Walk")
+    elif activity.get("stage") == "occupied" and activity.get("activity") == "shelter":
+        set_motion(&"SitDown")
+    else:
+        set_motion(&"Idle")
+    presentation.match_speed(motion_clip, frame.speed)
 
 func _physics_process(delta: float) -> void:
     if is_instance_valid(talking_to):

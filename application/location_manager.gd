@@ -4,7 +4,7 @@ extends Node
 const PRESENTATIONS := {"tonsai": "res://tonsai/camp.tscn"}
 var camp: TonsaiCamp
 
-func enter(id: String, session: LocalGameSession, profile: PlayerProfile) -> bool:
+func enter(id: String, session: GameSession, profile: PlayerProfile) -> bool:
     if not PRESENTATIONS.has(id):
         return false
     leave()
