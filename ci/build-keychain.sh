@@ -21,14 +21,23 @@ Path("core/disabled_classes.gen.h").write_text("// Default official template: no
 GEN
 out="$root/build/tonsai-project/ios/plugins"
 mkdir -p "$out"
-for sdk in iphoneos iphonesimulator; do
+for variant in device-arm64 simulator-arm64 simulator-x86_64; do
+  sdk=iphoneos
+  arch=arm64
   triple=arm64-apple-ios15.0
-  [[ "$sdk" != iphonesimulator ]] || triple=arm64-apple-ios15.0-simulator
+  if [[ "$variant" == simulator-* ]]; then
+    sdk=iphonesimulator
+    arch="${variant#simulator-}"
+    triple="$arch-apple-ios15.0-simulator"
+  fi
   xcrun --sdk "$sdk" clang++ -target "$triple" -isysroot "$(xcrun --sdk "$sdk" --show-sdk-path)" \
     -std=c++17 -fobjc-arc -fblocks -fno-exceptions -DIOS_ENABLED -DUNIX_ENABLED \
-    -DNDEBUG -DPTRCALL_ENABLED -I"$source_dir" -I"$source_dir/platform/ios" -c native/ios/survivor_keychain.mm -o "build/keychain-$sdk.o"
-  xcrun ar rcs "build/keychain-$sdk.a" "build/keychain-$sdk.o"
+    -DNDEBUG -DPTRCALL_ENABLED -I"$source_dir" -I"$source_dir/platform/ios" \
+    -c native/ios/survivor_keychain.mm -o "build/keychain-$variant.o"
+  xcrun ar rcs "build/keychain-$variant.a" "build/keychain-$variant.o"
 done
+xcrun lipo -create build/keychain-simulator-arm64.a build/keychain-simulator-x86_64.a -output build/keychain-iphonesimulator.a
+cp build/keychain-device-arm64.a build/keychain-iphoneos.a
 xcodebuild -create-xcframework -library build/keychain-iphoneos.a -library build/keychain-iphonesimulator.a \
   -output "$out/survivor_keychain.xcframework"
 cp native/ios/survivor_keychain.gdip "$out/"
