@@ -235,8 +235,52 @@ func _finish() -> void:
     status.text = "Complete · copy report · automated desktop results are not iPhone certification"
 
 func _copy() -> void:
-    DisplayServer.clipboard_set(report.text)
-    report.select_all()
+    if not OS.has_feature("web"):
+        DisplayServer.clipboard_set(report.text)
+        return
+    # Reuse the accepted touch-trace approach: Safari requires a native trusted tap.
+    JavaScriptBridge.eval("""
+        (text => {
+            const dialog = document.createElement("dialog");
+            dialog.setAttribute("aria-label", "Benchmark report");
+            dialog.style.cssText = "width:min(36rem,90vw);box-sizing:border-box;max-height:85dvh;color:#eef4ef;background:#152830;border:1px solid #93ada5;border-radius:8px;font:16px system-ui;padding:16px";
+            const tip = document.createElement("p");
+            tip.textContent = "Benchmark report";
+            tip.style.marginTop = "0";
+            const field = document.createElement("textarea");
+            field.setAttribute("aria-label", "Benchmark JSON");
+            field.value = text;
+            field.readOnly = true;
+            field.style.cssText = "width:100%%;height:28vh;box-sizing:border-box;font-size:16px";
+            const copy = document.createElement("button");
+            copy.textContent = "Copy";
+            copy.autofocus = true;
+            const close = document.createElement("button");
+            close.textContent = "Close";
+            for (const button of [copy, close]) {
+                button.style.cssText = "min-height:44px;margin:8px 8px 0 0;padding:0 16px;font:inherit";
+            }
+            copy.addEventListener("click", async () => {
+                try {
+                    await navigator.clipboard.writeText(text);
+                    tip.textContent = "Report copied";
+                } catch {
+                    field.focus();
+                    field.select();
+                    tip.textContent = "Select the report text and use Copy";
+                }
+            });
+            close.addEventListener("click", () => dialog.close());
+            dialog.addEventListener("close", () => {
+                dialog.remove();
+                document.querySelector("canvas")?.focus();
+            });
+            dialog.append(tip, field, copy, close);
+            document.body.append(dialog);
+            dialog.showModal();
+        })(%s)
+    """ % JSON.stringify(report.text), true)
+
 
 func _notification(what: int) -> void:
     if what == NOTIFICATION_APPLICATION_PAUSED:
