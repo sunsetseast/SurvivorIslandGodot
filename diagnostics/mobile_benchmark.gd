@@ -26,6 +26,7 @@ var report: TextEdit
 var count_button: Button
 var quality_button: Button
 var scene_button: Button
+var copy_button: Button
 var stress_button: Button
 var _visibility: JavaScriptObject
 
@@ -51,8 +52,10 @@ func _ready() -> void:
     report = TextEdit.new()
     report.custom_minimum_size = Vector2(650, 150)
     report.editable = false
+    report.visible = false
     panel.add_child(report)
-    _button(panel, "Copy report", _copy)
+    copy_button = _button(panel, "Copy report", _copy)
+    copy_button.visible = false
     get_viewport().size_changed.connect(_layout)
     _layout()
     if OS.has_feature("web"):
@@ -75,7 +78,11 @@ func _layout() -> void:
     if not area.has_area():
         area = Rect2(Vector2.ZERO, window)
     panel.position = area.position * size / window + Vector2(16, 12)
-    panel.scale = Vector2.ONE * minf(1.0, (area.size.x * size.x / window.x - 32) / 720.0)
+    var css_width := window.x
+    if OS.has_feature("web"):
+        css_width = float(JavaScriptBridge.get_interface("window").innerWidth)
+    var content_scale := size.x / maxf(1.0, css_width)
+    panel.scale = Vector2.ONE * content_scale * minf(1.0, (css_width - 32) / 720.0)
 
 func _count() -> void:
     count = {1: 6, 6: 12, 12: 18, 18: 1}[count]
@@ -98,6 +105,8 @@ func _stress() -> void:
 
 func _rebuild() -> void:
     measuring = false
+    report.visible = false
+    copy_button.visible = false
     var started := Time.get_ticks_usec()
     if scene_root != null:
         remove_child(scene_root)
@@ -149,6 +158,8 @@ func _rebuild() -> void:
     status.text = "Ready · 18 simulated contestants · fixed camera · idle/walk split"
 
 func _start() -> void:
+    report.visible = false
+    copy_button.visible = false
     elapsed = 0.0
     sample_count = 0
     monitor_elapsed = 0.0
@@ -197,6 +208,7 @@ func _finish() -> void:
     if OS.has_feature("web"):
         device = str(JavaScriptBridge.get_interface("navigator").userAgent)
         dpr = JavaScriptBridge.get_interface("window").devicePixelRatio
+    var static_bytes := Performance.get_monitor(Performance.MEMORY_STATIC)
     var result := {
         "build_sha": ProjectSettings.get_setting("survivor_diagnostics/build_sha", "unrecorded"),
         "device_browser": device, "viewport": str(get_viewport().get_visible_rect().size),
@@ -205,17 +217,19 @@ func _finish() -> void:
         "visible_rigs": count, "simulated_contestants": 18, "warmup_seconds": 3,
         "sampling_seconds": total / 1000.0, "frames": sample_count,
         "average_fps": sample_count * 1000.0 / total,
-        "median_ms": sorted[sample_count / 2], "p95_ms": sorted[mini(sample_count - 1, ceili(sample_count * .95) - 1)],
+        "median_ms": (sorted[(sample_count - 1) / 2] + sorted[sample_count / 2]) * .5, "p95_ms": sorted[mini(sample_count - 1, ceili(sample_count * .95) - 1)],
         "slow_frame_percent_over_33_34ms": slow * 100.0 / sample_count,
         "draw_calls_sample_mean": draws / maxi(1, monitor_count),
         "primitives_sample_mean": primitives / maxi(1, monitor_count),
-        "static_memory_bytes": Performance.get_monitor(Performance.MEMORY_STATIC),
+        "static_memory_bytes": static_bytes if static_bytes > 0 else "unavailable: release template",
         "render_memory_estimate": "unavailable: Compatibility/Web monitor is not reliable",
         "animation_cost": "unavailable: no per-rig engine timing monitor",
         "last_simulation_step_usec": step_usec, "scene_load_usec": load_usec,
         "scene_unload_usec": unload_usec, "save_checkpoint_usec": "unavailable: benchmark never writes saves"
     }
     report.text = JSON.stringify(result, "  ")
+    report.visible = true
+    copy_button.visible = true
     status.text = "Complete · copy report · automated desktop results are not iPhone certification"
 
 func _copy() -> void:

@@ -31,11 +31,12 @@ cp icon.svg "$stage/" 2>/dev/null || true
 # files are outside the allowlist. Neither Phase 0 nor the lab is reconfigured.
 cp project.godot "$stage/"
 if [[ "${TONSAI_STAGE_ONLY:-0}" == 1 ]]; then
+  cp native/development-icon.svg "$stage/icon.svg"
   python3 - "$stage/project.godot" <<'NATIVE'
 from pathlib import Path
 import sys
 path = Path(sys.argv[1])
-path.write_text(path.read_text().replace("[rendering]", "[rendering]\ntextures/vram_compression/import_etc2_astc=true"))
+path.write_text(path.read_text().replace("[application]", '[application]\nconfig/icon="res://icon.svg"').replace("[rendering]", "[rendering]\ntextures/vram_compression/import_etc2_astc=true"))
 NATIVE
 fi
 if [[ "${SURVIVOR_DIAGNOSTICS:-0}" == 1 ]]; then
