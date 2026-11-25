@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<!-- Build-only placeholder; not distribution artwork or branding. -->
+<rect width="1024" height="1024" fill="#24383d"/>
+<path d="M280 280h464v464H280z" fill="none" stroke="#ffffff" stroke-width="32"/>
+<path d="M360 512h304M512 360v304" stroke="#ffffff" stroke-width="32"/>
+</svg>

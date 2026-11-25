@@ -13,7 +13,7 @@ fi
 rm -rf "$stage" "$output"
 mkdir -p "$stage/character_lab/assets" "$stage/tests" "$stage/tools/tonsai" "$output"
 touch build/.gdignore
-cp -R controllers simulation application persistence multiplayer "$stage/"
+cp -R controllers simulation application persistence multiplayer diagnostics "$stage/"
 mkdir -p "$stage/world/assets"
 cp world/water_surface.gd world/water.gdshader world/camp_fire.gd world/fire_flipbook.gdshader "$stage/world/"
 for asset in surface-swimming.res sunflowers-sky.jpg kloofendal-clear.jpg flame02.webp water-ripple.png seating_log.glb seat_stump.glb shore_rock.glb; do
@@ -23,13 +23,25 @@ mkdir -p "$stage/tonsai/shaders" "$stage/tonsai/generated"
 cp tonsai/*.gd tonsai/*.tscn "$stage/tonsai/"
 cp tonsai/shaders/*.gdshader "$stage/tonsai/shaders/"
 cp tools/tonsai/bake_nav.gd tools/tonsai/bake_server_collision.gd "$stage/tools/tonsai/"
-cp tests/tonsai_test.gd tests/application_test.gd "$stage/tests/"
+cp tests/tonsai_test.gd tests/application_test.gd tests/credential_test.gd tests/benchmark_test.gd "$stage/tests/"
 cp character_lab/actor.gd "$stage/character_lab/"
 cp character_lab/assets/maeve.glb "$stage/character_lab/assets/"
 cp icon.svg "$stage/" 2>/dev/null || true
 # This stage is the sole export root. Source references and private likeness
 # files are outside the allowlist. Neither Phase 0 nor the lab is reconfigured.
 cp project.godot "$stage/"
+if [[ "${TONSAI_STAGE_ONLY:-0}" == 1 ]]; then
+  cp native/development-icon.svg "$stage/icon.svg"
+  python3 - "$stage/project.godot" <<'NATIVE'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+path.write_text(path.read_text().replace("[application]", '[application]\nconfig/icon="res://icon.svg"').replace("[rendering]", "[rendering]\ntextures/vram_compression/import_etc2_astc=true"))
+NATIVE
+fi
+if [[ "${SURVIVOR_DIAGNOSTICS:-0}" == 1 ]]; then
+  printf '\n[survivor_diagnostics]\nenabled=true\nbuild_sha="%s"\n' "$(git rev-parse HEAD)" >> "$stage/project.godot"
+fi
 if [[ -n "${SURVIVOR_WSS_ENDPOINT:-}" ]]; then
   if [[ ! "$SURVIVOR_WSS_ENDPOINT" =~ ^wss://[a-zA-Z0-9.-]+(:[0-9]+)?/ws$ ]]; then
     echo "SURVIVOR_WSS_ENDPOINT must be wss://your-host/ws" >&2
@@ -67,8 +79,11 @@ if [[ "${TONSAI_PREPARE_SERVER:-0}" != 0 ]]; then
   fi
 fi
 cp "$stage/tonsai/generated/navigation.res" tonsai/generated/navigation.res
+if [[ "${TONSAI_STAGE_ONLY:-0}" == 1 ]]; then exit 0; fi
 run_godot --fixed-fps 60 --script res://tests/tonsai_test.gd
 run_godot --fixed-fps 60 --script res://tests/application_test.gd
+run_godot --script res://tests/credential_test.gd
+run_godot --script res://tests/benchmark_test.gd
 run_godot --export-release Web "$output/index.html"
 python3 - "$output" <<'PY'
 from pathlib import Path

@@ -56,6 +56,23 @@ func _test() -> void:
     _check(app.session.view("tonsai").season_id == before.season_id, "Continue season")
     _check(app.session.view("tonsai").knowledge == before.knowledge, "Continue journal")
     app._exit_session()
+    var counts: Array[int] = []
+    var objects: Array[int] = []
+    var memory: Array[int] = []
+    for cycle in 6:
+        app._load(1)
+        _check(app.locations.get_child_count() == 1, "One owned location")
+        var retired: WeakRef = weakref(app.locations.camp)
+        app._exit_session()
+        await process_frame
+        await process_frame
+        _check(retired.get_ref() == null, "Retired camp released")
+        _check(app.locations.get_child_count() == 0, "No orphaned location")
+        counts.append(int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT)))
+        objects.append(int(Performance.get_monitor(Performance.OBJECT_COUNT)))
+        memory.append(int(Performance.get_monitor(Performance.MEMORY_STATIC)))
+    _check(counts[-1] <= counts[1] + 2, "Bounded node count after warm caches")
+    print("Repeated location node counts: ", counts, "; objects: ", objects, "; static bytes: ", memory)
     app._slots(false)
     var saved := app.saves.inspect(1)
     _test_cloud_listing(app, store, saved)

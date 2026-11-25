@@ -1,0 +1,116 @@
+name: Native store readiness
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/native-readiness.yml'
+      - 'native/**'
+      - 'ci/*native*'
+      - 'ci/build-keychain.sh'
+      - 'export_presets.cfg'
+concurrency:
+  group: native-readiness-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  ios:
+    if: github.event.repository.private == false
+    runs-on: macos-15-intel
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Record standard runner and selected Xcode
+        run: |
+          test "${{ runner.environment }}" = github-hosted
+          python3 - <<'XCODE'
+          import glob, os, re, subprocess
+          choices = []
+          for app in glob.glob("/Applications/Xcode*.app"):
+              developer = app + "/Contents/Developer"
+              env = dict(os.environ, DEVELOPER_DIR=developer)
+              result = subprocess.run(["xcodebuild", "-version"], env=env, text=True, capture_output=True)
+              match = re.search(r"Xcode (\d+)(?:\.(\d+))?", result.stdout)
+              if match:
+                  version = (int(match[1]), int(match[2] or 0))
+                  print(developer, result.stdout.strip(), flush=True)
+                  if version[0] >= 26:
+                      choices.append((version, developer))
+          if not choices:
+              raise SystemExit("BLOCKED: pinned Godot 4.7.2 templates require Xcode 26+ SDK symbols; no compatible installed Xcode found. No signing purchase is needed.")
+          _, developer = max(choices)
+          env = dict(os.environ, DEVELOPER_DIR=developer)
+          with open(os.environ["GITHUB_ENV"], "a") as out:
+              out.write("DEVELOPER_DIR=" + developer + "\n")
+          print("Selected", developer)
+          subprocess.run(["xcodebuild", "-version"], env=env, check=True)
+          subprocess.run(["xcrun", "--sdk", "iphoneos", "--show-sdk-version"], env=env, check=True)
+          XCODE
+      - run: bash ci/install-native.sh
+      - name: Stage public assets once
+        env:
+          TONSAI_STAGE_ONLY: '1'
+          SURVIVOR_WSS_ENDPOINT: wss://survivor-island-phase3c.onrender.com/ws
+        run: bash ci/build-tonsai.sh
+      - name: Compile device and simulator Keychain plugin
+        run: bash ci/build-keychain.sh
+      - name: Export unsigned Xcode project
+        id: ios_export
+        run: |
+          mkdir -p build/ios
+          "$GODOT_BIN" --headless --path build/tonsai-project --editor --import --quit
+          "$GODOT_BIN" --headless --path build/tonsai-project --export-release "iOS Readiness" "$PWD/build/ios/SurvivorIsland.zip"
+          test -d build/ios/SurvivorIsland.xcodeproj
+      - name: Compile unsigned device application
+        run: |
+          xcodebuild -project build/ios/SurvivorIsland.xcodeproj -scheme SurvivorIsland -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/ios-device CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+      - name: Compile simulator application
+        id: simulator
+        if: always() && steps.ios_export.outcome == 'success'
+        run: |
+          xcodebuild -project build/ios/SurvivorIsland.xcodeproj -scheme SurvivorIsland -configuration Release -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build/ios-simulator CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+      - name: Boot available simulator and launch
+        if: always() && steps.simulator.outcome == 'success'
+        run: python3 ci/start-simulator.py
+  android:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - run: bash ci/install-godot-web.sh
+      - run: |
+          echo "GODOT_BIN=$HOME/.local/bin/godot-4.7.2" >> "$GITHUB_ENV"
+          export PATH="$HOME/.local/bin:$PATH"
+          ln -s "$HOME/.local/bin/godot-4.7.2" "$HOME/.local/bin/godot"
+          bash ci/install-native.sh
+      - run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.1.0" "ndk;29.0.14206865"
+      - name: Stage shared public-safe game
+        env:
+          TONSAI_STAGE_ONLY: '1'
+          SURVIVOR_WSS_ENDPOINT: wss://survivor-island-phase3c.onrender.com/ws
+        run: bash ci/build-tonsai.sh
+      - name: Export unsigned ARM64 AAB
+        run: |
+          mkdir -p build/android
+          timeout 600 "$GODOT_BIN" --headless --path build/tonsai-project --install-android-build-template --export-release "Android Readiness" "$PWD/build/android/SurvivorIsland.aab"
+          unzip -l build/android/SurvivorIsland.aab | tee build/android/contents.txt
+          grep 'base/lib/arm64-v8a/libgodot_android.so' build/android/contents.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-android-readiness
+          path: build/android/
+          retention-days: 7

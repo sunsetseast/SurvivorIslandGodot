@@ -42,6 +42,11 @@ var _save_usec := 0
 var _review_elapsed := 0.0
 
 func _ready() -> void:
+    if ProjectSettings.get_setting("survivor_diagnostics/enabled", false) and OS.has_feature("web") \
+            and bool(JavaScriptBridge.eval("new URLSearchParams(location.search).has('benchmark')")):
+        add_child(load("res://diagnostics/mobile_benchmark.gd").new())
+        set_physics_process(false)
+        return
     get_tree().auto_accept_quit = false
     identity = SurvivorIdentityService.new()
     profile = PlayerProfile.new(identity.guest_store)
@@ -63,7 +68,7 @@ func _ready() -> void:
     _ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     _ui.mouse_filter = Control.MOUSE_FILTER_IGNORE
     layer.add_child(_ui)
-    _ui.resized.connect(_update_account_layout)
+    _ui.resized.connect(_layout_menus)
     if OS.has_feature("web"):
         var window := JavaScriptBridge.get_interface("window")
         if bool(JavaScriptBridge.eval("new URLSearchParams(location.search).has('review')")):
@@ -77,6 +82,7 @@ func _ready() -> void:
         if window.visualViewport != null:
             _visual_resize = JavaScriptBridge.create_callback(_visual_viewport_changed)
             window.visualViewport.addEventListener("resize", _visual_resize)
+    auth.restore_session.call_deferred()
     _main("Local storage is unavailable. Progress may be lost." if not profile.available else "")
 
 func _exit_tree() -> void:
@@ -530,7 +536,14 @@ func _position_panel(panel: PanelContainer, bottom: bool) -> void:
     var viewport := _ui.size
     var height := _account_visible_height() if panel == _account_panel else viewport.y
     var displayed_size := panel.size * panel.scale
-    var y := height - displayed_size.y - 18.0 if bottom else maxf(0.0, (height - displayed_size.y) * .5)
+    var inset := Vector2.ZERO
+    if OS.has_feature("ios") or OS.has_feature("android"):
+        var window := Vector2(DisplayServer.window_get_size()).max(Vector2.ONE)
+        var area := Rect2(DisplayServer.get_display_safe_area())
+        if area.has_area():
+            inset = area.position * viewport / window
+            height = minf(height, area.end.y * viewport.y / window.y)
+    var y := height - displayed_size.y - 18.0 if bottom else maxf(inset.y, (height - displayed_size.y + inset.y) * .5)
     panel.position = Vector2((viewport.x - displayed_size.x) * .5, y)
 
 func _visual_viewport_changed(_args: Array) -> void:
@@ -595,3 +608,10 @@ func _cloud_updated(index: int, status: String) -> void:
             _slot_sync_labels[index].text = cloud.slot_status(index, entry)
     if session != null and slot == index and screen == Screen.SESSION:
         _status.text = "Slot %d · %s" % [index, SurvivorAccountMenu.message(status)]
+
+
+func _layout_menus() -> void:
+    _update_account_layout()
+    for child: Node in _ui.get_children():
+        if child is PanelContainer and child != _account_panel:
+            _position_panel(child, screen == Screen.SESSION)
