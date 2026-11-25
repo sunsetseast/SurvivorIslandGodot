@@ -87,6 +87,12 @@ static func create() -> Theme:
         theme.set_color("font_hover_color", type, Color.WHITE)
         theme.set_color("font_pressed_color", type, Color.WHITE)
         theme.set_color("font_hover_pressed_color", type, Color.WHITE)
+    theme.set_type_variation("CompactButton", "Button")
+    for state: String in ["normal", "hover", "pressed", "disabled"]:
+        var compact := theme.get_stylebox(state, "Button").duplicate() as StyleBox
+        compact.content_margin_left = 5
+        compact.content_margin_right = 5
+        theme.set_stylebox(state, "CompactButton", compact)
     theme.set_type_variation("PrimaryButton", "Button")
     theme.set_type_variation("ParchmentHeading", "Label")
     theme.set_color("font_color", "ParchmentHeading", INK)

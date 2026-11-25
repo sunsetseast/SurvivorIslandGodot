@@ -117,9 +117,11 @@ func _label(value: String, font_size: int) -> Label:
 func _button(value: String, action: Callable) -> Button:
     var button := Button.new()
     button.text = value
+    button.theme_type_variation = "CompactButton"
     button.focus_mode = FOCUS_NONE
     button.custom_minimum_size = Vector2(147, 50)
-    button.add_theme_font_size_override("font_size", 18)
+    button.add_theme_font_size_override("font_size", 16)
+    button.add_theme_constant_override("outline_size", 2)
     button.pressed.connect(action)
     return button
 

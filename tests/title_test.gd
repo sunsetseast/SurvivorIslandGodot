@@ -39,6 +39,9 @@ func run() -> void:
     check(retired.get_ref() == null, "Title released entering gameplay")
     check(app.session != null and app._title_environment == null, "Gameplay has no title camera")
     check(app.locations.camp.hud.theme.default_font == app._ui.theme.default_font, "Gameplay HUD inherits the same typography")
+    for control: Node in app.locations.camp.hud.get_children():
+        if control is Button:
+            check(control.get_combined_minimum_size().x <= 147, "Themed HUD retains accepted touch bounds: " + control.text)
     app._exit_session()
     await process_frame
     check(app.session == null and app._title_environment != null, "Return creates only presentation")
