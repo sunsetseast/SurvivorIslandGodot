@@ -10,3 +10,14 @@ Record the commit SHA, GitHub Actions run URL, Pages deployment URL and device r
 | iPhone 17 Pro Max in Safari landscape | Record first-load time, legibility, independent two-thumb input, orientation changes, tab recovery, FPS and temperature |
 
 This milestone ends at verifying the build and preview workflow. Character production, full island layout and additional gameplay are outside Phase 0.
+
+### Phase 4A review
+
+Main base was independently verified at the PR #10 merge. The draft introduces a
+presentation-only title environment and shared `IslandTheme`; see the existing
+technical design for ownership and the selective asset audit. Public exports use the
+text title; private review staging may receive the original approved optimized logo
+via `SURVIVOR_PRIVATE_LOGO`. Keep that variable out of public Actions. Review the
+actual landscape UI before merge. Phase 4B should replace `_new_game` with the approved
+18-person selection flow after reconciling the two reference cast catalogs; no Phase 4A
+stats or custom rules should be inferred from the technical season.

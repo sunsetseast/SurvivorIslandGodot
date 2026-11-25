@@ -1,7 +1,7 @@
 class_name SurvivorGameApp
 extends Node
 
-enum Screen { MAIN, SLOTS, SETTINGS, SESSION, ACCOUNT, MULTIPLAYER }
+enum Screen { MAIN, SLOTS, SETTINGS, SESSION, ACCOUNT, MULTIPLAYER, NEW_GAME, CREDITS }
 const AUTOSAVE_SECONDS := 30
 
 var screen := Screen.MAIN
@@ -40,6 +40,8 @@ var _location_ms := 0
 var _unload_ms := 0
 var _save_usec := 0
 var _review_elapsed := 0.0
+var _title_environment: IslandTitleEnvironment
+var _brand_panel: VBoxContainer
 
 func _ready() -> void:
     if ProjectSettings.get_setting("survivor_diagnostics/enabled", false) and OS.has_feature("web") \
@@ -67,6 +69,7 @@ func _ready() -> void:
     _ui = Control.new()
     _ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     _ui.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    _ui.theme = IslandTheme.create()
     layer.add_child(_ui)
     _ui.resized.connect(_layout_menus)
     if OS.has_feature("web"):
@@ -176,7 +179,7 @@ func _process(delta: float) -> void:
         "step_usec": session.last_step_usec if session != null else 0})
 
 func _main(message := "") -> void:
-    _menu(Screen.MAIN, "Survivor Island", message)
+    _menu(Screen.MAIN, "", message)
     var latest := 0
     var latest_timestamp := 0
     for index in range(1, LocalSaveProvider.SLOTS + 1):
@@ -186,11 +189,77 @@ func _main(message := "") -> void:
             latest_timestamp = int(entry.timestamp)
     var resume := _button("continue", "Continue", _load.bind(latest))
     resume.disabled = latest == 0
-    _button("new", "New Game", _slots.bind(true))
+    if latest > 0:
+        var entry := saves.inspect(latest)
+        _status.text = "Day %d · Slot %d" % [entry.state.day, latest] + ("\n" + message if not message.is_empty() else "")
+    elif message.is_empty():
+        _status.text = "Your story begins on the shore."
+    resume.theme_type_variation = "PrimaryButton"
+    _button("new", "New Game", _new_game)
     _button("load", "Load Game", _slots.bind(false))
-    _button("multiplayer", "Private Multiplayer", _open_multiplayer)
     _button("settings", "Settings", _settings)
     _button("account", "Account & Cloud Saves" if not auth.account.is_empty() else "Account", _accounts.open)
+    var secondary := HBoxContainer.new()
+    _stack.add_child(secondary)
+    _button("multiplayer", "Multiplayer · Test", _open_multiplayer, secondary)
+    _button("credits", "Credits", _credits, secondary)
+    _build_brand()
+
+func _new_game() -> void:
+    _menu(Screen.NEW_GAME, "A new beginning", "Explore the playable Tonsai season.\nContestant selection and season customization arrive in the next Phase 4 milestones.\nChoose an empty slot to begin; existing seasons stay intact.")
+    _button("begin", "Choose Save Slot", _slots.bind(true)).theme_type_variation = "PrimaryButton"
+    _button("back", "Back", _main)
+
+func _credits() -> void:
+    _menu(Screen.CREDITS, "Credits & notices", "Survivor Island · Development build\n\nTonsai environment: existing project reconstruction and CC0 assets from Poly Haven.\nWater: GodotLearning Stylized Water (CC0).\nAnimation: Quaternius (CC0). Fire: Unity Labs (CC0).\nTypography: Noto Sans and Noto Serif Display, Google (SIL Open Font License 1.1).\nCamera damping: Phantom Camera (MIT).\n\nSource and license notices: docs/phase2/ASSETS.md, application/presentation/fonts/LICENSE.txt and controllers/third_party/PHANTOM_CAMERA_LICENSE.txt.\nOriginal logo: developer-approved reuse; distribution clearance remains unverified.\nNo commercial affiliation is claimed.")
+    var notices := Label.new()
+    notices.text = FileAccess.get_file_as_string("res://application/presentation/fonts/LICENSE.txt") + "\n" + FileAccess.get_file_as_string("res://controllers/third_party/PHANTOM_CAMERA_LICENSE.txt")
+    notices.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    _stack.add_child(notices)
+    _button("back", "Back", _main)
+
+func _build_brand() -> void:
+    _brand_panel = VBoxContainer.new()
+    _brand_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    _ui.add_child(_brand_panel)
+    var eyebrow := Label.new()
+    eyebrow.text = "T H E   A N D A M A N   C O A S T"
+    eyebrow.add_theme_color_override("font_shadow_color", Color("#101e1b"))
+    eyebrow.add_theme_constant_override("shadow_offset_y", 2)
+    eyebrow.add_theme_color_override("font_color", IslandTheme.GOLD)
+    _brand_panel.add_child(eyebrow)
+    # Private staging is explicit; the public build uses an elegant text title.
+    if ResourceLoader.exists("res://private_brand/logo.png"):
+        var logo := TextureRect.new()
+        logo.texture = load("res://private_brand/logo.png")
+        logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+        logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+        logo.custom_minimum_size.y = 210
+        _brand_panel.add_child(logo)
+    else:
+        var title := Label.new()
+        title.text = "SURVIVOR\nISLAND"
+        title.add_theme_font_override("font", IslandTheme.SERIF)
+        title.add_theme_font_size_override("font_size", 52)
+        title.add_theme_color_override("font_shadow_color", Color("#101e1b"))
+        title.add_theme_constant_override("shadow_offset_y", 3)
+        _brand_panel.add_child(title)
+    var line := HSeparator.new()
+    _brand_panel.add_child(line)
+    var caption := Label.new()
+    caption.text = "Deep simulation. Light presentation."
+    caption.add_theme_font_size_override("font_size", 16)
+    _brand_panel.add_child(caption)
+    _layout_brand()
+
+func _layout_brand() -> void:
+    if not is_instance_valid(_brand_panel):
+        return
+    var factor := _menu_scale()
+    _brand_panel.scale = Vector2.ONE * factor
+    _brand_panel.size.x = maxf(250, _ui.size.x / factor * .43)
+    _brand_panel.position = Vector2(_ui.size.x * .065, _ui.size.y * .24)
+    _brand_panel.visible = _ui.size.x / factor > 650
 
 func _open_multiplayer() -> void:
     if auth.account.is_empty() or auth.recovery_pending():
@@ -245,6 +314,7 @@ func _refresh_multiplayer() -> void:
     if remote == null:
         return
     if remote.has_state and locations.camp == null and remote.room.get("started", false):
+        _release_title()
         if locations.enter("tonsai", remote, profile):
             _menu(Screen.SESSION, "", remote.status)
             var row := HBoxContainer.new()
@@ -361,6 +431,8 @@ func _settings() -> void:
 
 func _preference(key: String, value: Variant) -> void:
     var saved := profile.set_preference(key, value)
+    if is_instance_valid(_title_environment):
+        _title_environment.set_economy(profile.preferences.economy)
     _settings()
     if not saved:
         _status.text = "Preference could not be saved."
@@ -386,6 +458,7 @@ func _load(index: int) -> void:
         _status.text = "Recovered the previous checkpoint."
 
 func _enter(sim: SeasonSimulation, index: int, revision: int) -> bool:
+    _release_title()
     session = LocalGameSession.new(sim, sim.player_id)
     slot = index
     save_revision = revision
@@ -474,6 +547,13 @@ func _leave() -> void:
 
 func _menu(next: Screen, title: String, message: String) -> void:
     screen = next
+    _brand_panel = null
+    if next == Screen.SESSION:
+        _release_title()
+    elif not is_instance_valid(_title_environment):
+        _title_environment = IslandTitleEnvironment.new()
+        _title_environment.economy = profile.preferences.economy
+        add_child(_title_environment)
     _actions.clear()
     _slot_sync_labels.clear()
     _account_panel = null
@@ -483,25 +563,17 @@ func _menu(next: Screen, title: String, message: String) -> void:
         child.queue_free()
     if next != Screen.SESSION:
         var background := ColorRect.new()
-        background.color = Color("#172c31")
+        background.color = Color("#081511a8") if next != Screen.MAIN else Color("#08151138")
         background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
         _ui.add_child(background)
     var panel := PanelContainer.new()
     _ui.add_child(panel)
     var anchor := Control.PRESET_CENTER_BOTTOM if next == Screen.SESSION else Control.PRESET_CENTER
     panel.set_anchors_preset(anchor)
-    var surface := StyleBoxFlat.new()
-    surface.bg_color = Color("#1a393cee")
-    surface.set_corner_radius_all(8)
-    surface.content_margin_left = 16
-    surface.content_margin_right = 16
-    surface.content_margin_top = 8
-    surface.content_margin_bottom = 8
-    panel.add_theme_stylebox_override("panel", surface)
     _stack = VBoxContainer.new()
     _stack.custom_minimum_size.x = 300 if next == Screen.SESSION else 450
     _stack.add_theme_constant_override("separation", 7)
-    if next in [Screen.ACCOUNT, Screen.SLOTS, Screen.MULTIPLAYER]:
+    if next != Screen.SESSION:
         var scroll := SurvivorMenuScroll.new()
         scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
         scroll.follow_focus = true
@@ -521,8 +593,8 @@ func _menu(next: Screen, title: String, message: String) -> void:
         var heading := Label.new()
         heading.text = title
         heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-        heading.add_theme_font_size_override("font_size", 31)
-        if next in [Screen.ACCOUNT, Screen.SLOTS, Screen.MULTIPLAYER]:
+        heading.theme_type_variation = "SectionHeading"
+        if next != Screen.SESSION:
             heading.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
         _stack.add_child(heading)
     _status.text = message
@@ -543,8 +615,22 @@ func _position_panel(panel: PanelContainer, bottom: bool) -> void:
         if area.has_area():
             inset = area.position * viewport / window
             height = minf(height, area.end.y * viewport.y / window.y)
+    if screen == Screen.MAIN:
+        panel.position = Vector2(_safe_menu_x(viewport.x * .56 if viewport.x / _menu_scale() > 650 else (viewport.x - displayed_size.x) * .5, displayed_size.x),
+            maxf(12, (height - displayed_size.y) * .5))
+        return
     var y := height - displayed_size.y - 18.0 if bottom else maxf(inset.y, (height - displayed_size.y + inset.y) * .5)
-    panel.position = Vector2((viewport.x - displayed_size.x) * .5, y)
+    panel.position = Vector2(_safe_menu_x((viewport.x - displayed_size.x) * .5, displayed_size.x), y)
+
+func _safe_menu_x(preferred: float, width: float) -> float:
+    if OS.has_feature("ios") or OS.has_feature("android"):
+        var area := Rect2(DisplayServer.get_display_safe_area())
+        var window := Vector2(DisplayServer.window_get_size()).max(Vector2.ONE)
+        if area.has_area():
+            var left := area.position.x * _ui.size.x / window.x + 12
+            var right := area.end.x * _ui.size.x / window.x - 12
+            return clampf(preferred, left, maxf(left, right - width))
+    return preferred
 
 func _visual_viewport_changed(_args: Array) -> void:
     _update_account_layout()
@@ -560,21 +646,21 @@ func _update_account_layout() -> void:
         return
     # Express menu layout in CSS pixels on Web so portrait canvas stretching
     # does not reduce the account text or tap targets to half size.
-    var width := _ui.size.x
-    if OS.has_feature("web"):
-        width = float(JavaScriptBridge.get_interface("window").innerWidth)
-    var content_scale := maxf(0.1, _ui.size.x / maxf(1.0, width))
+    var content_scale := _menu_scale()
+    var width := _ui.size.x / content_scale
     _account_panel.scale = Vector2.ONE * content_scale
-    _account_scroll.custom_minimum_size = Vector2(clampf(width - 56.0, 140.0, 560.0),
-        clampf(_account_visible_height() / content_scale - 40.0, 90.0, 590.0))
+    var menu_width := clampf(width * .35, 280, 390) if screen == Screen.MAIN else clampf(width - 88, 140, 560)
+    _account_scroll.custom_minimum_size = Vector2(menu_width,
+        clampf(_account_visible_height() / content_scale - 64.0, 90.0, 590.0))
     _account_panel.reset_size()
     _position_panel(_account_panel, false)
 
 func _button(key: String, label: String, action: Callable, parent: Control = null) -> Button:
     var button := Button.new()
     button.text = label
-    button.custom_minimum_size = Vector2(110, 47)
-    button.add_theme_font_size_override("font_size", 20)
+    button.custom_minimum_size = Vector2(110, IslandTheme.TOUCH)
+    button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    button.add_theme_font_size_override("font_size", IslandTheme.BODY)
     button.pressed.connect(action)
     (parent if parent != null else _stack).add_child(button)
     _actions[key] = button
@@ -596,6 +682,8 @@ func _identity_changed() -> void:
     cloud.bind(active_store if signed_in else null, saves if signed_in else null)
     if changed_namespace and screen == Screen.SESSION:
         _main("Session expired. Sign in to resume your account saves.")
+    elif changed_namespace and screen == Screen.MAIN:
+        _main()
     elif changed_namespace and screen == Screen.SLOTS:
         _slots(_slot_mode)
     elif changed_namespace and not signed_in and screen == Screen.ACCOUNT:
@@ -610,8 +698,20 @@ func _cloud_updated(index: int, status: String) -> void:
         _status.text = "Slot %d · %s" % [index, SurvivorAccountMenu.message(status)]
 
 
+func _release_title() -> void:
+    if is_instance_valid(_title_environment):
+        remove_child(_title_environment)
+        _title_environment.queue_free()
+        _title_environment = null
+
+func _menu_scale() -> float:
+    if OS.has_feature("web"):
+        return maxf(.1, _ui.size.x / maxf(1, float(JavaScriptBridge.get_interface("window").innerWidth)))
+    return maxf(.6, _ui.size.y / 540.0)
+
 func _layout_menus() -> void:
     _update_account_layout()
+    _layout_brand()
     for child: Node in _ui.get_children():
         if child is PanelContainer and child != _account_panel:
             _position_panel(child, screen == Screen.SESSION)

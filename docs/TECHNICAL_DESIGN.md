@@ -200,3 +200,63 @@ Native controls retain DisplayServer safe-area conversion and absolute multitouc
 - The private [HTTPS draft preview](https://survivor-island-phase-3d.peachybeetle18.chatgpt.site/?benchmark) is separate from Pages, Phase 0 and the character laboratory. Its source marker and gzip-decoded game/engine signatures were verified over authenticated HTTPS. It retains ChatGPT access control. The standalone automated Chromium trust store rejected the hosted certificate; TLS validation was not bypassed. Browser gameplay and benchmark validation used the local exported fixture.
 
 Remaining iPhone 17 Pro Max acceptance: run the 1/6/12/18-rig Full/Economy isolated/Tonsai samples in Safari landscape; check sustained thermals, safe areas, both steering modes, keyboard dismissal, background/foreground, termination/reload and offline/cloud-interruption recovery. Signed native installation, actual Keychain runtime, final App Store/Google Play identities, artwork, privacy declarations, signing and developer enrollment remain release tasks. Android uses memory-only credentials until a Keystore adapter is implemented. No physical two-device multiplayer test or paid prerequisite blocks Phase 4 single-player development.
+
+## Phase 4A — home presentation ownership
+
+Verified base: main `433a9a96eda26add7d076753605dc4f969bc2b24`, the merge of PR #10.
+`SurvivorGameApp` still owns navigation, identity, save selection and location lifetime.
+`IslandTitleEnvironment` owns only its camera and selected Tonsai presentation resources:
+terrain, ocean, limestone, coast palms and selected forest. It has no actors, navigation, collision bodies,
+simulation or networking. It uses the existing water shader, warm low sun and a bounded,
+slow camera drift. Economy disables title shadows, using the existing preference. The
+app releases the entire title node before loading gameplay and rebuilds it on return.
+Settings/account/load pages share it; they never create a season. Authentication restoration
+continues through the established account service independently of title presentation.
+
+`IslandTheme` owns the palette, OFL typography, 8 px spacing, 48 px primary touch size,
+button variants, section headings, panel/dialog surfaces, inputs, scrollbars and attribute
+bar styles. New Control/Container interfaces inherit the root theme. Do not add a separate
+screen-specific palette. The existing keyboard-aware menu scroller now wraps all full menus.
+Main uses a landscape brand/menu composition; narrow screens hide the brand column and retain
+scrollable navigation. Existing touch, camera and movement controllers are unchanged.
+
+Continue chooses the most recently timestamped owned local checkpoint and shows only known
+day/slot metadata. New Game is an explicit explanation and empty-slot boundary into the
+existing technical season. Phase 4B replaces this boundary with contestant selection; it
+must reconcile the 18 approved contestants and existing calibrated catalogs before exposing
+attributes. No new stats, season rules, schema, marooning or opening-challenge abstraction
+is introduced here. Multiplayer stays a secondary testing entry.
+
+### Asset decisions
+
+Inspected the actual 1536×910 RGBA `Assets/logo.png` and representatives of Buttons, Tribe,
+Resources, Idols, Journey and Screens from SurvivorIsland2025. The original logo is reusable
+after optimization **in the authorized private preview**: 1024×607 PNG, unchanged aspect,
+alpha and artwork. Public distribution rights are unverified, so neither logo bytes nor
+screenshots containing it enter GitHub or public Actions exports. `SURVIVOR_PRIVATE_LOGO`
+accepts an external approved PNG only during intentional private staging; without it the
+same screen renders the text-title fallback. Keep that variable unset in public CI.
+
+| Collection | Decision |
+| --- | --- |
+| Tonsai meshes, water, sky, textures | Reusable; existing public allowlist and provenance in phase2/ASSETS.md. Title omits actors, props, full foliage and collisions. |
+| Original logo | Optimize for private review; rights/provenance verification required before public distribution. No redesign. |
+| Buttons/blank.png | Replace with theme surfaces; old ornamental texture is too visually heavy and large for primary navigation. |
+| Tribe/green-banner.png | Visual reference only for woven color accents; no imported cards or banners. |
+| Resources/coconut.png, Idols/tribe1.png | Potential future inventory reference; rights/provenance verification required, then mobile optimization. Not imported. |
+| Journey/arrival.png, Screens/beach.png | Visual reference only; live Tonsai replaces illustrated home backgrounds. No imported screen textures. |
+| Survivant.ttf | Replace: license not established in source. Noto Sans and Noto Serif Display are bundled with the SIL OFL notices. |
+
+The private build mechanism must never ingest contestant likenesses. No reference artwork
+directory is imported wholesale. No production/commercial affiliation or clearance is claimed.
+
+Verification: Godot 4.7.2 Compatibility Web export; foundation, Tonsai, application,
+title-boundary, credential-mock and all 16 benchmark configurations passed. Six warm
+home/game cycles had stable node/object counts. Title initialization measured 0.4–1.9 seconds
+in headless runs (varying CPU load); a cold local software-rendered Chromium Web launch took 8–12 seconds
+including engine download/initialization. These are development-machine observations,
+not iPhone GPU or network measurements. Browser viewport/interaction checks and the
+private HTTPS preview are recorded in the draft PR. Live Supabase account mutation,
+physical Safari keyboard/safe-area behavior, native signed installs and physical
+multiplayer were not certified by this change. Existing developer benchmark and Phase 0 /
+character-lab destinations remain separate and unchanged.
