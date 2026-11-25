@@ -29,7 +29,10 @@ cp character_lab/assets/maeve.glb "$stage/character_lab/assets/"
 cp icon.svg "$stage/" 2>/dev/null || true
 # This stage is the sole export root. Source references and private likeness
 # files are outside the allowlist. Neither Phase 0 nor the lab is reconfigured.
-# Optional approved brand stays outside Git and public artifacts.
+# Optional approved art/font stay outside Git and public artifacts.
+if [[ -n "${SURVIVOR_PRIVATE_UI:-}" ]]; then
+  python3 tools/tonsai/stage_private_ui.py "$SURVIVOR_PRIVATE_UI" "$stage/private_brand"
+fi
 if [[ -n "${SURVIVOR_PRIVATE_LOGO:-}" ]]; then
   mkdir -p "$stage/private_brand"
   cp "$SURVIVOR_PRIVATE_LOGO" "$stage/private_brand/logo.png"

@@ -19,6 +19,7 @@ func run() -> void:
     check(app.session == null and app.remote == null and app.locations.camp == null, "Title has no gameplay or multiplayer session")
     check(app._title_environment.find_children("*", "CollisionObject3D", true, false).is_empty(), "Title has no physics bodies")
     check(app._title_environment.find_children("*", "Camera3D", true, false).size() == 1, "One cinematic camera")
+    check(ThemeDB.get_default_theme().default_font == app._ui.theme.default_font, "Separate game UI layers share the global font")
     var store := LocalDataStore.new("title-test-" + GameStateData.new_id())
     app.profile = PlayerProfile.new(store)
     app.saves = LocalSaveProvider.new(store)
@@ -37,6 +38,7 @@ func run() -> void:
     await process_frame
     check(retired.get_ref() == null, "Title released entering gameplay")
     check(app.session != null and app._title_environment == null, "Gameplay has no title camera")
+    check(app.locations.camp.hud.theme.default_font == app._ui.theme.default_font, "Gameplay HUD inherits the same typography")
     app._exit_session()
     await process_frame
     check(app.session == null and app._title_environment != null, "Return creates only presentation")

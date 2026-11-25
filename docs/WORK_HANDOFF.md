@@ -21,3 +21,10 @@ via `SURVIVOR_PRIVATE_LOGO`. Keep that variable out of public Actions. Review th
 actual landscape UI before merge. Phase 4B should replace `_new_game` with the approved
 18-person selection flow after reconciling the two reference cast catalogs; no Phase 4A
 stats or custom rules should be inferred from the technical season.
+
+Phase 4A visual revision replaces the rejected application styling with original private
+wood/Survivant assets and a brighter live tropical title. `SURVIVOR_PRIVATE_UI` stages
+only the four approved files through `tools/tonsai/stage_private_ui.py`. Public Actions
+must leave it unset. Future artwork uses and deferred shoreline/wind/weather targets
+are recorded in TECHNICAL_DESIGN.md. The Web regression now follows the deliberate
+NEW_GAME → Choose Save Slot boundary; it retains the complete gameplay assertions.

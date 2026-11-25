@@ -330,6 +330,8 @@ def main():
         startup = round(monotonic() - now, 2)
         page.screenshot(path=config.captures / "main-menu.png")
         app_tap(page, "new")
+        app_wait(page, 'a.screen === "NEW_GAME" && a.season === ""')
+        app_tap(page, "begin")
         app_wait(page, 'a.screen === "SLOTS"')
         app_tap(page, "slot1")
         page.wait_for_function("Boolean(window.tonsaiMetrics)", timeout=50000)

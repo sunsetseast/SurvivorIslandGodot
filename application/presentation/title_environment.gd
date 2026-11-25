@@ -20,12 +20,28 @@ func _ready() -> void:
     terrain._sea()
     for body: Node in terrain.find_children("*", "CollisionObject3D", true, false):
         body.free()
-    terrain.sun.rotation_degrees = Vector3(-24, -118, 0)
-    terrain.sun.light_color = Color("#ffe5be")
-    terrain.sun.light_energy = .85
-    terrain.atmosphere.ambient_light_color = Color("#c4d4cf")
-    terrain.atmosphere.ambient_light_energy = .48
-    terrain.atmosphere.fog_light_color = Color("#d7c6aa")
+    terrain.sun.rotation_degrees = Vector3(-42, -132, 0)
+    terrain.sun.light_color = Color("#fff1d8")
+    terrain.sun.light_energy = 1.05
+    terrain.sun.directional_shadow_max_distance = 180
+    terrain.atmosphere.ambient_light_color = Color("#c1d9ed")
+    terrain.atmosphere.ambient_light_energy = .28
+    terrain.atmosphere.fog_enabled = false
+    var sky := Sky.new()
+    sky.radiance_size = Sky.RADIANCE_SIZE_64
+    var sky_material := ShaderMaterial.new()
+    sky_material.shader = preload("res://application/presentation/tropical_sky.gdshader")
+    sky_material.set_shader_parameter("cloud_panorama", load("res://world/assets/sunflowers-sky.jpg"))
+    sky.sky_material = sky_material
+    terrain.atmosphere.sky = sky
+    terrain.atmosphere.sky_rotation.y = deg_to_rad(40)
+    var sea := terrain.get_node("AndamanSea") as MeshInstance3D
+    var ocean := sea.material_override as ShaderMaterial
+    ocean.set_shader_parameter("shallows", Color("#22cbb2d9"))
+    ocean.set_shader_parameter("offshore", Color("#086b9cf5"))
+    ocean.set_shader_parameter("reflection_tint", Vector3(.13, .55, .73))
+    ocean.set_shader_parameter("motion_strength", 1.7)
+    ocean.set_shader_parameter("shimmer_strength", .65)
     var kit := TonsaiEnvironmentKit.new()
     kit.site = site
     add_child(kit)
@@ -36,9 +52,20 @@ func _ready() -> void:
     for key: String in kit.library:
         kit.library[key] = kit.library[key].duplicate() as Mesh
     kit._grade_foliage()
+    for key: String in kit.library:
+        if not ("leaves" in key or "crown" in key):
+            continue
+        var mesh := kit.library[key] as ArrayMesh
+        for index in mesh.get_surface_count():
+            var leaves := mesh.surface_get_material(index) as StandardMaterial3D
+            if leaves != null:
+                leaves.albedo_color = Color("#90b965") if "palm" in key else Color("#71974e")
     var stone := ShaderMaterial.new()
     stone.shader = TonsaiEnvironmentKit.ROCK
     stone.set_shader_parameter("limestone", load(TonsaiSiteData.DIR + "rock_06_diff_1k.jpg"))
+    stone.set_shader_parameter("mineral_gain", 1.10)
+    stone.set_shader_parameter("mineral_lift", .045)
+    stone.set_shader_parameter("weathering", .45)
     kit._static("southern-cliff-rock-far", Vector3.ZERO, stone)
     for mass: Dictionary in site.layout.headlands:
         var cliff := kit._static("limestone-far", Vector3(mass.x, mass.y, mass.z), stone)
@@ -51,6 +78,9 @@ func _ready() -> void:
         var trees: Array = kit._variant(site.layout.vegetation.trees, variant).filter(
             func(p: Array) -> bool: return p[2] > 35 and p[2] < 120 and p[0] < 55)
         kit._batch(["forest-%s-wood-far" % variant, "forest-%s-crown-far" % variant], trees, 240.0, false)
+    for visual: Node in kit.get_children():
+        if visual is GeometryInstance3D:
+            visual.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
     kit.library.clear()
     add_child(camera)
     camera.fov = 62
@@ -66,5 +96,5 @@ func set_economy(value: bool) -> void:
 
 func _process(delta: float) -> void:
     elapsed += delta
-    camera.position = Vector3(-78 + sin(elapsed * .045) * 1.2, 5.0, 79 + cos(elapsed * .045) * .8)
+    camera.position = Vector3(-78 + sin(elapsed * .075) * 3.0, 5.0, 79 + cos(elapsed * .075) * 1.5)
     camera.look_at(Vector3(10, 12, 103))

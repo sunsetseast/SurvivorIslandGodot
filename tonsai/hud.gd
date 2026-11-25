@@ -26,6 +26,7 @@ var close_button: Button
 var _trace_ready := false
 
 func _ready() -> void:
+    theme = IslandTheme.create()
     set_anchors_and_offsets_preset(PRESET_FULL_RECT)
     mouse_filter = MOUSE_FILTER_IGNORE
     touch = CampTouch.new()
@@ -64,16 +65,6 @@ func _ready() -> void:
     diagnostics.hide()
     add_child(diagnostics)
     dialog = PanelContainer.new()
-    var card := StyleBoxFlat.new()
-    card.bg_color = Color("#152830ed")
-    card.border_color = Color("#8ca89d")
-    card.set_border_width_all(1)
-    card.set_corner_radius_all(11)
-    card.content_margin_left = 17
-    card.content_margin_right = 17
-    card.content_margin_top = 14
-    card.content_margin_bottom = 14
-    dialog.add_theme_stylebox_override("panel", card)
     add_child(dialog)
     var stack := VBoxContainer.new()
     stack.add_theme_constant_override("separation", 9)
@@ -117,9 +108,9 @@ func _label(value: String, font_size: int) -> Label:
     var label := Label.new()
     label.text = value
     label.add_theme_font_size_override("font_size", font_size)
-    label.add_theme_color_override("font_color", Color("#f5f5de"))
-    label.add_theme_color_override("font_outline_color", Color("#12282c"))
-    label.add_theme_constant_override("outline_size", 6)
+    label.add_theme_color_override("font_color", Color.WHITE)
+    label.add_theme_color_override("font_outline_color", Color.BLACK)
+    label.add_theme_constant_override("outline_size", maxi(2, roundi(font_size * .12)))
     label.mouse_filter = MOUSE_FILTER_IGNORE
     return label
 
@@ -129,13 +120,6 @@ func _button(value: String, action: Callable) -> Button:
     button.focus_mode = FOCUS_NONE
     button.custom_minimum_size = Vector2(147, 50)
     button.add_theme_font_size_override("font_size", 18)
-    for style in ["normal", "hover", "pressed"]:
-        var surface := StyleBoxFlat.new()
-        surface.bg_color = Color("#1a393ce8") if style == "normal" else Color("#3e5e55")
-        surface.border_color = Color("#93ada5aa")
-        surface.set_border_width_all(1)
-        surface.set_corner_radius_all(7)
-        button.add_theme_stylebox_override(style, surface)
     button.pressed.connect(action)
     return button
 

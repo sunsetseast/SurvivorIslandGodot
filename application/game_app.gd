@@ -44,6 +44,7 @@ var _title_environment: IslandTitleEnvironment
 var _brand_panel: VBoxContainer
 
 func _ready() -> void:
+    IslandTheme.install()
     if ProjectSettings.get_setting("survivor_diagnostics/enabled", false) and OS.has_feature("web") \
             and bool(JavaScriptBridge.eval("new URLSearchParams(location.search).has('benchmark')")):
         add_child(load("res://diagnostics/mobile_benchmark.gd").new())
@@ -176,7 +177,10 @@ func _process(delta: float) -> void:
         "preferences": profile.preferences, "season": view.get("season_id", ""),
         "tick": view.get("tick", 0), "knowledge": view.get("knowledge", []).size(),
         "location_ms": _location_ms, "unload_ms": _unload_ms, "save_usec": _save_usec,
-        "step_usec": session.last_step_usec if session != null else 0})
+        "step_usec": session.last_step_usec if session != null else 0,
+        "title_elapsed": _title_environment.elapsed if is_instance_valid(_title_environment) else 0.0,
+        "title_camera": var_to_str(_title_environment.camera.position) if is_instance_valid(_title_environment) else "",
+        "ui_font": _ui.theme.default_font.get_font_name()})
 
 func _main(message := "") -> void:
     _menu(Screen.MAIN, "", message)
@@ -192,18 +196,20 @@ func _main(message := "") -> void:
     if latest > 0:
         var entry := saves.inspect(latest)
         _status.text = "Day %d · Slot %d" % [entry.state.day, latest] + ("\n" + message if not message.is_empty() else "")
-    elif message.is_empty():
-        _status.text = "Your story begins on the shore."
+
     resume.theme_type_variation = "PrimaryButton"
     _button("new", "New Game", _new_game)
     _button("load", "Load Game", _slots.bind(false))
     _button("settings", "Settings", _settings)
-    _button("account", "Account & Cloud Saves" if not auth.account.is_empty() else "Account", _accounts.open)
-    var secondary := HBoxContainer.new()
-    _stack.add_child(secondary)
-    _button("multiplayer", "Multiplayer · Test", _open_multiplayer, secondary)
-    _button("credits", "Credits", _credits, secondary)
+    _button("account", "Account", _accounts.open)
+    _button("multiplayer", "Multiplayer Test", _open_multiplayer)
+    _button("credits", "Credits", _credits)
+    _status.visible = not _status.text.is_empty()
     _build_brand()
+    if latest > 0 and message.is_empty():
+        resume.tooltip_text = _status.text
+        _stack.remove_child(_status)
+        _brand_panel.add_child(_status)
 
 func _new_game() -> void:
     _menu(Screen.NEW_GAME, "A new beginning", "Explore the playable Tonsai season.\nContestant selection and season customization arrive in the next Phase 4 milestones.\nChoose an empty slot to begin; existing seasons stay intact.")
@@ -211,7 +217,7 @@ func _new_game() -> void:
     _button("back", "Back", _main)
 
 func _credits() -> void:
-    _menu(Screen.CREDITS, "Credits & notices", "Survivor Island · Development build\n\nTonsai environment: existing project reconstruction and CC0 assets from Poly Haven.\nWater: GodotLearning Stylized Water (CC0).\nAnimation: Quaternius (CC0). Fire: Unity Labs (CC0).\nTypography: Noto Sans and Noto Serif Display, Google (SIL Open Font License 1.1).\nCamera damping: Phantom Camera (MIT).\n\nSource and license notices: docs/phase2/ASSETS.md, application/presentation/fonts/LICENSE.txt and controllers/third_party/PHANTOM_CAMERA_LICENSE.txt.\nOriginal logo: developer-approved reuse; distribution clearance remains unverified.\nNo commercial affiliation is claimed.")
+    _menu(Screen.CREDITS, "Credits & notices", "Survivor Island · Development build\n\nTonsai environment: existing project reconstruction and CC0 assets from Poly Haven.\nWater: GodotLearning Stylized Water (CC0).\nAnimation: Quaternius (CC0). Fire: Unity Labs (CC0).\nTypography: Survivant in private builds (rights verification pending). Noto Sans fallback, Google (SIL Open Font License 1.1).\nCamera damping: Phantom Camera (MIT).\n\nSource and license notices: docs/phase2/ASSETS.md, application/presentation/fonts/LICENSE.txt and controllers/third_party/PHANTOM_CAMERA_LICENSE.txt.\nOriginal logo: developer-approved reuse; distribution clearance remains unverified.\nNo commercial affiliation is claimed.")
     var notices := Label.new()
     notices.text = FileAccess.get_file_as_string("res://application/presentation/fonts/LICENSE.txt") + "\n" + FileAccess.get_file_as_string("res://controllers/third_party/PHANTOM_CAMERA_LICENSE.txt")
     notices.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -222,34 +228,22 @@ func _build_brand() -> void:
     _brand_panel = VBoxContainer.new()
     _brand_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
     _ui.add_child(_brand_panel)
-    var eyebrow := Label.new()
-    eyebrow.text = "T H E   A N D A M A N   C O A S T"
-    eyebrow.add_theme_color_override("font_shadow_color", Color("#101e1b"))
-    eyebrow.add_theme_constant_override("shadow_offset_y", 2)
-    eyebrow.add_theme_color_override("font_color", IslandTheme.GOLD)
-    _brand_panel.add_child(eyebrow)
     # Private staging is explicit; the public build uses an elegant text title.
     if ResourceLoader.exists("res://private_brand/logo.png"):
         var logo := TextureRect.new()
         logo.texture = load("res://private_brand/logo.png")
         logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
         logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-        logo.custom_minimum_size.y = 210
+        logo.custom_minimum_size.y = 230
         _brand_panel.add_child(logo)
     else:
         var title := Label.new()
         title.text = "SURVIVOR\nISLAND"
-        title.add_theme_font_override("font", IslandTheme.SERIF)
+        title.add_theme_font_override("font", IslandTheme.font())
         title.add_theme_font_size_override("font_size", 52)
         title.add_theme_color_override("font_shadow_color", Color("#101e1b"))
         title.add_theme_constant_override("shadow_offset_y", 3)
         _brand_panel.add_child(title)
-    var line := HSeparator.new()
-    _brand_panel.add_child(line)
-    var caption := Label.new()
-    caption.text = "Deep simulation. Light presentation."
-    caption.add_theme_font_size_override("font_size", 16)
-    _brand_panel.add_child(caption)
     _layout_brand()
 
 func _layout_brand() -> void:
@@ -258,7 +252,7 @@ func _layout_brand() -> void:
     var factor := _menu_scale()
     _brand_panel.scale = Vector2.ONE * factor
     _brand_panel.size.x = maxf(250, _ui.size.x / factor * .43)
-    _brand_panel.position = Vector2(_ui.size.x * .065, _ui.size.y * .24)
+    _brand_panel.position = Vector2(_ui.size.x * .045, (_ui.size.y - 230 * factor) * .5)
     _brand_panel.visible = _ui.size.x / factor > 800
 
 func _open_multiplayer() -> void:
@@ -561,18 +555,20 @@ func _menu(next: Screen, title: String, message: String) -> void:
     for child: Node in _ui.get_children():
         _ui.remove_child(child)
         child.queue_free()
-    if next != Screen.SESSION:
+    if next not in [Screen.SESSION, Screen.MAIN]:
         var background := ColorRect.new()
         background.color = Color("#081511a8") if next != Screen.MAIN else Color("#08151138")
         background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
         _ui.add_child(background)
     var panel := PanelContainer.new()
     _ui.add_child(panel)
+    if next == Screen.MAIN:
+        panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
     var anchor := Control.PRESET_CENTER_BOTTOM if next == Screen.SESSION else Control.PRESET_CENTER
     panel.set_anchors_preset(anchor)
     _stack = VBoxContainer.new()
     _stack.custom_minimum_size.x = 300 if next == Screen.SESSION else 450
-    _stack.add_theme_constant_override("separation", 7)
+    _stack.add_theme_constant_override("separation", 5 if next == Screen.MAIN else IslandTheme.SPACE)
     if next != Screen.SESSION:
         var scroll := SurvivorMenuScroll.new()
         scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -593,7 +589,7 @@ func _menu(next: Screen, title: String, message: String) -> void:
         var heading := Label.new()
         heading.text = title
         heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-        heading.theme_type_variation = "SectionHeading"
+        heading.theme_type_variation = "ParchmentHeading" if next == Screen.NEW_GAME else "SectionHeading"
         if next != Screen.SESSION:
             heading.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
         _stack.add_child(heading)
@@ -616,7 +612,7 @@ func _position_panel(panel: PanelContainer, bottom: bool) -> void:
             inset = area.position * viewport / window
             height = minf(height, area.end.y * viewport.y / window.y)
     if screen == Screen.MAIN:
-        panel.position = Vector2(_safe_menu_x(minf(viewport.x * .56, viewport.x - displayed_size.x - 32 * _menu_scale()) if viewport.x / _menu_scale() > 800 else (viewport.x - displayed_size.x) * .5, displayed_size.x),
+        panel.position = Vector2(_safe_menu_x(viewport.x - displayed_size.x - 32 * _menu_scale() if viewport.x / _menu_scale() > 800 else (viewport.x - displayed_size.x) * .5, displayed_size.x),
             maxf(12, (height - displayed_size.y) * .5))
         return
     var y := height - displayed_size.y - 18.0 if bottom else maxf(inset.y, (height - displayed_size.y + inset.y) * .5)
@@ -649,15 +645,15 @@ func _update_account_layout() -> void:
     var content_scale := _menu_scale()
     var width := _ui.size.x / content_scale
     _account_panel.scale = Vector2.ONE * content_scale
-    var menu_width := clampf(width * .35, 280, 390) if screen == Screen.MAIN else clampf(width - 88, 140, 560)
+    var menu_width := clampf(width * .30, 245, 310) if screen == Screen.MAIN else clampf(width - 88, 140, 560)
     _account_scroll.custom_minimum_size = Vector2(menu_width,
-        clampf(_account_visible_height() / content_scale - 64.0, 90.0, 590.0))
+        clampf(_account_visible_height() / content_scale - (32.0 if screen == Screen.MAIN else 64.0), 90.0, 590.0))
     _account_panel.reset_size()
     _position_panel(_account_panel, false)
 
 func _button(key: String, label: String, action: Callable, parent: Control = null) -> Button:
     var button := Button.new()
-    button.text = label
+    button.text = label.to_upper()
     button.custom_minimum_size = Vector2(110, IslandTheme.TOUCH)
     button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     button.add_theme_font_size_override("font_size", IslandTheme.BODY)

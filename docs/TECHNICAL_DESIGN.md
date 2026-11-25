@@ -213,12 +213,18 @@ app releases the entire title node before loading gameplay and rebuilds it on re
 Settings/account/load pages share it; they never create a season. Authentication restoration
 continues through the established account service independently of title presentation.
 
-`IslandTheme` owns the palette, OFL typography, 8 px spacing, 48 px primary touch size,
-button variants, section headings, panel/dialog surfaces, inputs, scrollbars and attribute
-bar styles. New Control/Container interfaces inherit the root theme. Do not add a separate
-screen-specific palette. The existing keyboard-aware menu scroller now wraps all full menus.
-Main uses a landscape brand/menu composition; narrow screens hide the brand column and retain
-scrollable navigation. Existing touch, camera and movement controllers are unchanged.
+`IslandTheme` owns the original private Survivant font, white/black outlined wood-button
+lettering, brown parchment lettering, gold focus accents, spacing, inputs and attribute
+bars. Private staging accepts only logo.png, rect-button.png, rect-button-1.png and
+Survivant.ttf from the approved source through `SURVIVOR_PRIVATE_UI`; the staging helper
+crops alpha padding and resizes the PNGs while preserving their proportions. Wood and
+ornate parchment use nine-slice StyleBoxTexture resources. Do not commit restricted
+art/fonts or enable private staging in public Actions. Public builds retain Noto Sans
+and procedural wood-colored surfaces pending distribution/license clearance. The global
+default theme/fallback and separate HUD and Label3D typography inherit the same font.
+Main has no background panel or scrim; its logo and seven individual buttons sit over the
+live scene. Metadata sits beneath the logo so the navigation fits 402/440 px landscape.
+The existing keyboard-aware menu scroller remains responsible for small screens and inputs.
 
 Continue chooses the most recently timestamped owned local checkpoint and shows only known
 day/slot metadata. New Game is an explicit explanation and empty-slot boundary into the
@@ -231,8 +237,7 @@ is introduced here. Multiplayer stays a secondary testing entry.
 
 Inspected the actual 1536×910 RGBA `Assets/logo.png` and representatives of Buttons, Tribe,
 Resources, Idols, Journey and Screens from SurvivorIsland2025. The original logo is reusable
-after optimization **in the authorized private preview**: 1024×607 PNG, unchanged aspect,
-alpha and artwork. Public distribution rights are unverified, so neither logo bytes nor
+after optimization **in the authorized private preview**: 1024×610 PNG after cropping only transparent padding; original artwork and alpha are retained. Public distribution rights are unverified, so neither logo bytes nor
 screenshots containing it enter GitHub or public Actions exports. `SURVIVOR_PRIVATE_LOGO`
 accepts an external approved PNG only during intentional private staging; without it the
 same screen renders the text-title fallback. Keep that variable unset in public CI.
@@ -240,12 +245,12 @@ same screen renders the text-title fallback. Keep that variable unset in public 
 | Collection | Decision |
 | --- | --- |
 | Tonsai meshes, water, sky, textures | Reusable; existing public allowlist and provenance in phase2/ASSETS.md. Title omits actors, props, full foliage and collisions. |
-| Original logo | Optimize for private review; rights/provenance verification required before public distribution. No redesign. |
+| Original logo, rect-button.png, rect-button-1.png | Crop alpha padding and optimize for authorized private review; rights/provenance verification required before public distribution. No redesign. |
 | Buttons/blank.png | Replace with theme surfaces; old ornamental texture is too visually heavy and large for primary navigation. |
 | Tribe/green-banner.png | Visual reference only for woven color accents; no imported cards or banners. |
 | Resources/coconut.png, Idols/tribe1.png | Potential future inventory reference; rights/provenance verification required, then mobile optimization. Not imported. |
 | Journey/arrival.png, Screens/beach.png | Visual reference only; live Tonsai replaces illustrated home backgrounds. No imported screen textures. |
-| Survivant.ttf | Replace: license not established in source. Noto Sans and Noto Serif Display are bundled with the SIL OFL notices. |
+| Survivant.ttf | Approved private global font; rights verification required before public distribution. Noto Sans remains the licensed public/glyph fallback. |
 
 The private build mechanism must never ingest contestant likenesses. No reference artwork
 directory is imported wholesale. No production/commercial affiliation or clearance is claimed.
@@ -260,3 +265,30 @@ private HTTPS preview are recorded in the draft PR. Live Supabase account mutati
 physical Safari keyboard/safe-area behavior, native signed installs and physical
 multiplayer were not certified by this change. Existing developer benchmark and Phase 0 /
 character-lab destinations remain separate and unchanged.
+
+### Phase 4A visual revision
+
+Permanent visual materials: carved tropical wood, weathered stone, rope, leather,
+aged parchment and tribe-colored woven fabrics with restrained foliage. White Survivant
+button/HUD/name lettering uses proportionate black outlines; parchment uses dark brown. Tribe-name labels use the corresponding tribe color with a contrasting outline.
+Survivant is approved for private review, not established as commercially licensed.
+Existing Noto notices remain for the public/unsupported-glyph fallback. Main has no slogans.
+
+Future artwork uses (reference only, not imported): parch-portrait/parch-landscape for
+profiles, journals, statistics and Tree Mail; menu-card for player/in-game navigation;
+inventory1 for resources and inventory2 for items/tools/advantages. Preserve the backpack
+concept with dynamic functional item slots. clock is the day/phase/time display; beat-ui
+is for narrative announcements/journeys; Buttons is the navigation/control vocabulary.
+No future systems are implemented by this revision.
+
+The title removes gray overlay/fog, reduces ambient fill, restores warm directional
+sunlight and tunes the existing ocean's turquoise/deep-blue colors and moving highlights.
+Motion/shimmer uniforms keep gameplay defaults unchanged. Geometry, collision, navigation,
+water level/depth and swimming are unchanged. Later environmental polish: realistic
+shoreline waves and moving foam, palm/foliage wind, improved gameplay ocean motion and
+dynamic weather. These are presentation targets, not current simulation features.
+
+CI run 45689748366 failed at review_web.py:333: the test tapped New Game and waited for
+SLOTS, while the deliberate Phase 4A boundary correctly returned NEW_GAME. The test now
+asserts that screen has no season, taps Choose Save Slot, then preserves all existing
+save/Continue, movement, swimming and touch-corruption assertions.
