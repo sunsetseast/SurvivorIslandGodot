@@ -1,0 +1,7 @@
+.git
+.godot
+build
+tonsai/generated
+supabase
+docs
+**/.env*

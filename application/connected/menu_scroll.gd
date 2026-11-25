@@ -50,3 +50,9 @@ func cancel_touch() -> void:
 
 func _local_y(point: Vector2) -> float:
     return (get_global_transform_with_canvas().affine_inverse() * point).y
+
+static func edit_on_touch(event: InputEvent, field: LineEdit) -> void:
+    if event is InputEventScreenTouch and event.pressed:
+        field.grab_focus()
+        field.edit()
+        field.accept_event()

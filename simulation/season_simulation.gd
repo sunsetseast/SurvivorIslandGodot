@@ -19,17 +19,20 @@ var pose: Dictionary = {}
 var rng := RandomNumberGenerator.new()
 var _receipts: Dictionary = {}
 
-func _init(owner_id: String, season: String, seed_value: int) -> void:
+func _init(owner_id: String, season: String, seed_value: int, owners: Dictionary = {}) -> void:
     player_id = owner_id
     season_id = season
-    roster = SeasonCatalog.roster(owner_id)
+    roster = SeasonCatalog.roster(owner_id, owners)
     rng.seed = seed_value
     for location: String in SeasonCatalog.LOCATIONS:
         camps[location] = CampSimulation.new()
     for id: String in roster:
-        camps[roster[id].location].add(id, SeasonCatalog.FIRST_ACTIVITIES.get(id, ""))
+        camps[roster[id].location].add(id, SeasonCatalog.FIRST_ACTIVITIES.get(id, "") if roster[id].controller == "ai" else "")
 
 func advance(physical_location: String) -> void:
+    advance_locations([physical_location])
+
+func advance_locations(physical_locations: Array[String]) -> void:
     if tick >= MAX_TICK:
         return
     tick += 1
@@ -37,7 +40,7 @@ func advance(physical_location: String) -> void:
     for id: String in roster:
         var person: Dictionary = roster[id]
         if person.controller == "ai" and person.status == "active":
-            camps[person.location].schedule(id, tick, person.location == physical_location, rng)
+            camps[person.location].schedule(id, tick, physical_locations.has(person.location), rng)
 
 func observe_travel(location: String, id: String, activity: String, arrived: bool) -> bool:
     var person: Dictionary = roster.get(id, {})
@@ -51,30 +54,32 @@ func observe_travel(location: String, id: String, activity: String, arrived: boo
 func command(principal: String, request: Dictionary, observation: Dictionary) -> Dictionary:
     var actor: Variant = request.get("actor")
     var id: Variant = request.get("id")
-    if principal != player_id or actor != SeasonCatalog.CONTROLLED:
+    if actor is not String or actor.is_empty() or actor != contestant_for(principal):
         return _result(id, false, "not_owned")
     if id is not String or not GameStateData.identity(id):
         return _result("", false, "invalid_id")
-    if _receipts.has(id):
-        return _receipts[id].duplicate(true)
+    var receipt_key: String = actor + ":" + id
+    if _receipts.has(receipt_key):
+        return _receipts[receipt_key].duplicate(true)
     var target: Variant = request.get("target")
     var camp := camps[roster[actor].location]
-    if target is not String or target == actor or not camp.people.has(target) or roster[target].status != "active":
+    if target is not String or target == actor or not camp.people.has(target) or roster[target].status != "active" \
+            or roster[target].controller != "ai":
         return _result(id, false, "invalid_target")
     var kind: Variant = request.get("kind")
     var event := {}
     match kind:
         "talk.begin":
-            if not camp.conversation.is_empty() or observation.get("target") != target \
+            if camp.conversations.has(actor) or camp.conversations.values().has(target) or observation.get("target") != target \
                     or observation.get("location") != roster[actor].location \
                     or not GameStateData.number(observation.get("distance"), 0, REACH) \
                     or observation.get("accessible") != true:
                 return _result(id, false, "unavailable")
-            camp.conversation = target
+            camp.conversations[actor] = target
             event = {"type": "conversation_opened", "with": target}
         "talk.respond":
             var topic: Variant = request.get("topic")
-            if camp.conversation != target or topic is not String or not CampSimulation.TOPICS.has(topic):
+            if camp.conversations.get(actor) != target or topic is not String or not CampSimulation.TOPICS.has(topic):
                 return _result(id, false, "invalid_conversation_action")
             for record: Dictionary in camp.people[actor].journal:
                 if record.id == id:
@@ -82,15 +87,15 @@ func command(principal: String, request: Dictionary, observation: Dictionary) ->
             var reply := camp.respond(actor, target, topic, tick, id)
             event = {"type": "conversation_reply", "with": target, "reply": reply}
         "talk.end":
-            if camp.conversation != target:
+            if camp.conversations.get(actor) != target:
                 return _result(id, false, "invalid_conversation_action")
-            camp.conversation = ""
+            camp.conversations.erase(actor)
             event = {"type": "conversation_closed", "with": target}
         _:
             return _result(id, false, "unknown_command")
     revision += 1
     var result := _result(id, true, "", event)
-    _receipts[id] = result.duplicate(true)
+    _receipts[receipt_key] = result.duplicate(true)
     if _receipts.size() > CampSimulation.MAX_RECORDS:
         _receipts.erase(_receipts.keys().front())
     return result
@@ -98,8 +103,9 @@ func command(principal: String, request: Dictionary, observation: Dictionary) ->
 func _result(id: Variant, ok: bool, reason: String, event := {}) -> Dictionary:
     return {"id": str(id), "ok": ok, "reason": reason, "revision": revision, "event": event}
 
-func project(principal: String, location: String) -> Dictionary:
-    if principal != player_id or location != roster[SeasonCatalog.CONTROLLED].location:
+func project(principal: String, location: String, include_knowledge := true) -> Dictionary:
+    var actor := contestant_for(principal)
+    if actor.is_empty() or location != roster[actor].location:
         return {}
     var cast := {}
     var camp := camps[location]
@@ -108,8 +114,16 @@ func project(principal: String, location: String) -> Dictionary:
         cast[id] = {"name": roster[id].name, "activity": person.activity, "stage": person.stage}
     return {"season_id": season_id, "revision": revision, "tick": tick, "day": day(),
         "phase": "camp", "cast": cast, "objects": camp.objects.duplicate(true),
-        "controlled": SeasonCatalog.CONTROLLED, "pose": pose.duplicate(true),
-        "knowledge": camp.people[SeasonCatalog.CONTROLLED].journal.duplicate(true)}
+        "controlled": actor, "pose": pose.duplicate(true),
+        "knowledge": camp.people[actor].journal.duplicate(true) if include_knowledge else []}
+
+func contestant_for(principal: String) -> String:
+    if not principal.is_empty():
+        for id: String in roster:
+            var person: Dictionary = roster[id]
+            if person.controller == "human" and person.owner == principal and person.status == "active":
+                return id
+    return ""
 
 func day() -> int:
     return floori(float(tick) / TICKS_PER_DAY) + 1

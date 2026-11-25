@@ -1,7 +1,7 @@
 class_name GameSession
 extends RefCounted
 ## An authenticated binding supplies the principal. No actor can grant itself authority.
-## Remote implementations will publish the same projections and command results asynchronously.
+## Remote sessions publish projections and command results asynchronously.
 
 signal resolved(result: Dictionary)
 

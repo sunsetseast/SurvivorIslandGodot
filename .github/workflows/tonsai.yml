@@ -35,6 +35,8 @@ jobs:
         run: bash ci/test-simulation.sh
       - name: Assemble, bake and test Tonsai
         run: bash ci/build-tonsai.sh
+      - name: Build the dedicated Docker image
+        run: docker build --file server/Dockerfile --tag survivor-island-dedicated:ci .
       - name: Install Chromium headless shell
         run: |
           python3 -m pip install playwright==1.62.0

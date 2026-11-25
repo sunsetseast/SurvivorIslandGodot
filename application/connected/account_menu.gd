@@ -52,7 +52,7 @@ func _field(key: String, label: String, kind: LineEdit.VirtualKeyboardType, init
     field.accessibility_name = label
     field.virtual_keyboard_type = kind
     field.virtual_keyboard_show_on_focus = true
-    field.gui_input.connect(_edit_on_touch.bind(field))
+    field.gui_input.connect(SurvivorMenuScroll.edit_on_touch.bind(field))
     field.secret = key == "password"
     if OS.has_feature("web") and kind == LineEdit.KEYBOARD_TYPE_EMAIL_ADDRESS:
         # Godot 4.7.2's Web keyboard calls setSelectionRange, which HTML
@@ -64,12 +64,6 @@ func _field(key: String, label: String, kind: LineEdit.VirtualKeyboardType, init
     _app._stack.add_child(field)
     _fields[key] = field
     _app._actions[key] = field
-
-func _edit_on_touch(event: InputEvent, field: LineEdit) -> void:
-    if event is InputEventScreenTouch and event.pressed:
-        field.grab_focus()
-        field.edit()
-        field.accept_event()
 
 func _web_email_keyboard() -> void:
     JavaScriptBridge.eval("""(() => {

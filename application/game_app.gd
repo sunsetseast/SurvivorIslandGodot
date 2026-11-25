@@ -1,7 +1,7 @@
 class_name SurvivorGameApp
 extends Node
 
-enum Screen { MAIN, SLOTS, SETTINGS, SESSION, ACCOUNT }
+enum Screen { MAIN, SLOTS, SETTINGS, SESSION, ACCOUNT, MULTIPLAYER }
 const AUTOSAVE_SECONDS := 30
 
 var screen := Screen.MAIN
@@ -12,6 +12,8 @@ var auth: SurvivorAuthService
 var cloud: SurvivorCloudSaveService
 var _accounts: SurvivorAccountMenu
 var session: LocalGameSession
+var remote: RemoteGameSession
+var _room_code: LineEdit
 var locations := LocationManager.new()
 var slot := 0
 var save_revision := 0
@@ -78,6 +80,8 @@ func _ready() -> void:
     _main("Local storage is unavailable. Progress may be lost." if not profile.available else "")
 
 func _exit_tree() -> void:
+    if remote != null:
+        remote.close()
     if _visibility != null:
         var window := JavaScriptBridge.get_interface("window")
         JavaScriptBridge.get_interface("document").removeEventListener("visibilitychange", _visibility)
@@ -104,6 +108,8 @@ func _notification(what: int) -> void:
         NOTIFICATION_APPLICATION_RESUMED:
             _suspend(false)
         NOTIFICATION_WM_CLOSE_REQUEST:
+            if remote != null:
+                remote.close()
             if session == null or _save(false):
                 get_tree().quit()
             else:
@@ -113,6 +119,8 @@ func _suspend(value: bool) -> void:
     if suspended == value:
         return
     suspended = value
+    if remote != null:
+        remote.suspend(value)
     if value and _account_scroll != null:
         _account_scroll.cancel_touch()
     if locations.camp == null:
@@ -132,6 +140,8 @@ func _physics_process(delta: float) -> void:
         _save(false)
 
 func _process(delta: float) -> void:
+    if remote != null:
+        remote.poll()
     if _review == null:
         return
     _review_elapsed += delta
@@ -143,6 +153,11 @@ func _process(delta: float) -> void:
     for key: String in _actions:
         var center: Vector2 = _actions[key].get_global_rect().get_center() / size
         actions[key] = [center.x, center.y]
+    if remote != null:
+        _review.survivorApp = JSON.stringify({"screen": Screen.keys()[screen], "actions": actions,
+            "connected": remote.connected, "active": remote.active, "host_ready":
+                screen == Screen.MULTIPLAYER and _actions.start.visible and not _actions.start.disabled})
+        return
     if screen == Screen.ACCOUNT or not auth.account.is_empty():
         _review.survivorApp = JSON.stringify({"screen": Screen.keys()[screen], "actions": actions})
         return
@@ -167,8 +182,101 @@ func _main(message := "") -> void:
     resume.disabled = latest == 0
     _button("new", "New Game", _slots.bind(true))
     _button("load", "Load Game", _slots.bind(false))
+    _button("multiplayer", "Private Multiplayer", _open_multiplayer)
     _button("settings", "Settings", _settings)
     _button("account", "Account & Cloud Saves" if not auth.account.is_empty() else "Account", _accounts.open)
+
+func _open_multiplayer() -> void:
+    if auth.account.is_empty() or auth.recovery_pending():
+        _accounts.open()
+        _status.text = "Sign in to create or join a private session."
+        return
+    var endpoint := String(ProjectSettings.get_setting("survivor/multiplayer/endpoint", ""))
+    if OS.has_feature("web"):
+        var location := JavaScriptBridge.get_interface("location")
+        if str(location.hostname) in ["localhost", "127.0.0.1"] and endpoint.is_empty():
+            endpoint = "ws://" + str(location.host) + "/ws"
+    if not endpoint.begins_with("wss://") and not endpoint.begins_with("ws://localhost:") \
+            and not endpoint.begins_with("ws://127.0.0.1:"):
+        _main("Private multiplayer hosting is unavailable in this build.")
+        return
+    remote = RemoteGameSession.new(endpoint, auth.multiplayer_access_token)
+    remote.changed.connect(_refresh_multiplayer)
+    _multiplayer_menu()
+
+func _multiplayer_menu() -> void:
+    _menu(Screen.MULTIPLAYER, "Private Multiplayer", remote.status)
+    _room_code = LineEdit.new()
+    _room_code.placeholder_text = "Join code"
+    _room_code.max_length = SurvivorMultiplayerWire.CODE_LENGTH
+    _room_code.accessibility_name = "Join code"
+    _room_code.virtual_keyboard_show_on_focus = true
+    _room_code.gui_input.connect(SurvivorMenuScroll.edit_on_touch.bind(_room_code))
+    _room_code.custom_minimum_size.y = 43
+    _stack.add_child(_room_code)
+    _actions["join_code"] = _room_code
+    _button("create", "Create Private Session", remote.request_room.bind("create", {}))
+    _button("join", "Join Private Session", _join_private)
+    _button("start", "Start Session", remote.request_room.bind("start", {}))
+    _button("reconnect", "Reconnect to Session", _reconnect_private)
+    _button("back", "Leave Session", _leave_multiplayer)
+    _refresh_multiplayer()
+
+func _join_private() -> void:
+    var code := _room_code.text.strip_edges()
+    if code.length() != SurvivorMultiplayerWire.CODE_LENGTH or not code.is_valid_hex_number(false):
+        _status.text = "Enter the 12-character join code."
+        return
+    remote.request_room("join", {"code": code})
+
+func _reconnect_private() -> void:
+    if remote.connected:
+        remote.request_room("resume")
+    else:
+        remote.reconnect()
+
+func _refresh_multiplayer() -> void:
+    if remote == null:
+        return
+    if remote.has_state and locations.camp == null and remote.room.get("started", false):
+        if locations.enter("tonsai", remote, profile):
+            _menu(Screen.SESSION, "", remote.status)
+            var row := HBoxContainer.new()
+            row.alignment = BoxContainer.ALIGNMENT_CENTER
+            _stack.add_child(row)
+            _button("reconnect", "Reconnect", _reconnect_private, row)
+            _button("menu", "Leave Session", _leave_multiplayer, row)
+        else:
+            _leave_multiplayer("Tonsai could not be loaded.")
+            return
+    _status.text = remote.status
+    _actions.reconnect.visible = screen == Screen.MULTIPLAYER or not remote.connected
+    if screen != Screen.MULTIPLAYER:
+        return
+    var in_room := not remote.room.is_empty()
+    _room_code.visible = not in_room
+    _actions.create.visible = not in_room
+    _actions.join.visible = not in_room
+    _actions.create.disabled = not remote.connected
+    _actions.join.disabled = not remote.connected
+    _actions.start.visible = remote.room.get("host", false) and not remote.room.get("started", false)
+    if in_room:
+        var connected_names := PackedStringArray()
+        for member: Dictionary in remote.room.roster:
+            if member.online:
+                connected_names.append(SeasonCatalog.TONSAI_CAST[member.contestant])
+        _actions.start.disabled = not remote.connected or connected_names.size() != 2
+        _status.text += "\nCode " + String(remote.room.code) + " · " + str(connected_names.size()) + "/2 connected"
+        if not connected_names.is_empty():
+            _status.text += "\n" + ", ".join(connected_names)
+
+func _leave_multiplayer(message := "") -> void:
+    var closing := remote
+    remote = null
+    locations.leave()
+    if closing != null:
+        closing.close()
+    _main(message)
 
 func _slots(creating: bool) -> void:
     _slot_mode = creating
@@ -387,7 +495,7 @@ func _menu(next: Screen, title: String, message: String) -> void:
     _stack = VBoxContainer.new()
     _stack.custom_minimum_size.x = 300 if next == Screen.SESSION else 450
     _stack.add_theme_constant_override("separation", 7)
-    if next in [Screen.ACCOUNT, Screen.SLOTS]:
+    if next in [Screen.ACCOUNT, Screen.SLOTS, Screen.MULTIPLAYER]:
         var scroll := SurvivorMenuScroll.new()
         scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
         scroll.follow_focus = true
@@ -408,7 +516,7 @@ func _menu(next: Screen, title: String, message: String) -> void:
         heading.text = title
         heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
         heading.add_theme_font_size_override("font_size", 31)
-        if next in [Screen.ACCOUNT, Screen.SLOTS]:
+        if next in [Screen.ACCOUNT, Screen.SLOTS, Screen.MULTIPLAYER]:
             heading.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
         _stack.add_child(heading)
     _status.text = message
@@ -462,6 +570,8 @@ func _button(key: String, label: String, action: Callable, parent: Control = nul
 func _identity_changed() -> void:
     var previous := saves
     var signed_in := not auth.account.is_empty() and not auth.recovery_pending()
+    if remote != null and not signed_in:
+        _leave_multiplayer("Sign in again to reconnect to your private session.")
     var active_store := identity.store_for(auth.account if signed_in else "")
     var changed_namespace := previous.store.storage_prefix != active_store.storage_prefix
     if session != null and changed_namespace:

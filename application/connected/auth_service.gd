@@ -80,6 +80,19 @@ func clear() -> void:
     refresh_finished.emit()
     changed.emit()
 
+# Only the multiplayer transport receives this short-lived credential.
+func multiplayer_access_token() -> String:
+    if account.is_empty() or _recovery:
+        return ""
+    var generation := epoch
+    var tokens := _credentials.read()
+    if int(tokens.expires) <= int(Time.get_unix_time_from_system()) + 75:
+        await _refresh(generation, String(tokens.access))
+    if generation != epoch:
+        return ""
+    tokens = _credentials.read()
+    return String(tokens.access) if int(tokens.expires) > int(Time.get_unix_time_from_system()) + 5 else ""
+
 func authorized(path: String, method: HTTPClient.Method, body: Dictionary = {},
         recovery_allowed := false) -> Dictionary:
     if account.is_empty() or (_recovery and not recovery_allowed):

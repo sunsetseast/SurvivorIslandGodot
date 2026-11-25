@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: survivor-island-phase3c
+    runtime: docker
+    plan: free
+    region: virginia
+    dockerfilePath: ./server/Dockerfile
+    healthCheckPath: /health
+    autoDeployTrigger: off
+    envVars:
+      - key: SURVIVOR_CHECKPOINT_KEY
+        sync: false

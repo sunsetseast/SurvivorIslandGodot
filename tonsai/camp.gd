@@ -16,6 +16,7 @@ var site := TonsaiSiteData.new()
 const LOCATION := "tonsai"
 var session: GameSession
 var local_host: LocalGameSession
+var remote: RemoteGameSession
 var profile: PlayerProfile
 var _standalone := false
 signal preference_failed
@@ -70,6 +71,7 @@ func _ready() -> void:
         var guest := GameStateData.new_id()
         session = LocalGameSession.new(SeasonSimulation.new(guest, GameStateData.new_id(), 7216), guest)
     local_host = session as LocalGameSession
+    remote = session as RemoteGameSession
     if local_host != null:
         local_host.bind_physical_location(LOCATION)
     session.resolved.connect(_apply_talk_result)
@@ -120,7 +122,18 @@ func _spawn_cast() -> void:
     player.process_priority = -1
     player.select_controller(true)
     var view := session.view(LOCATION)
-    _restore_pose(view.pose)
+    if remote != null:
+        var initial := remote.movement(view.controlled)
+        player.remote = remote
+        player.remote_actor = view.controlled
+        player.position = SurvivorMultiplayerWire.position_from(initial)
+        player.set_heading(initial[3])
+        player.locomotion = int(initial[4])
+        player.restore_dive(initial[5])
+        player.collision_mask = 1 | 4
+        player.sync_camera()
+    else:
+        _restore_pose(view.pose)
     props.campfire.lit = view.objects.fire.lit
     # Initial formation is presentation data. The assigned camp roster comes from the session.
     var entries := [
@@ -138,11 +151,18 @@ func _spawn_cast() -> void:
         npc.position = site.ground(entry.x, entry.z) + Vector3.UP * .14
         npc.session = session
         npc.local_host = local_host
+        npc.remote = remote
+        if remote != null:
+            var row := remote.movement(id)
+            npc.position = SurvivorMultiplayerWire.position_from(row)
+            for member: Dictionary in remote.room.roster:
+                if member.contestant == id:
+                    npc.is_remote_human = true
         npc.destinations = destinations
         npc.delay = entry.y if view.tick == 0 else .2
         npc.rotation.y = -1.4 - entry.y * .45
         var activity: Dictionary = view.cast[id]
-        if activity.stage == "occupied":
+        if remote == null and activity.stage == "occupied":
             npc.position = destinations[StringName(activity.activity)] + Vector3.UP * .14
         add_child(npc)
         inhabitants.append(npc)
@@ -182,11 +202,13 @@ func remember_preference(key: String, value: Variant) -> void:
         preference_failed.emit()
 
 func nearby() -> TonsaiNpc:
-    if player.swimming():
+    if player.swimming() or (remote != null and not remote.active):
         return null
     var closest: TonsaiNpc
     var distance := REACH
     for candidate in inhabitants:
+        if candidate.is_remote_human:
+            continue
         var separation := player.global_position.distance_to(candidate.global_position)
         if separation >= distance:
             continue
@@ -229,6 +251,8 @@ func _apply_talk_result(result: Dictionary) -> void:
                     hud.touch.cancel()
                     player.locked = true
                     partner.interrupt(player)
+                    if remote != null:
+                        partner.talking_to = null
                     hud.show_dialog(partner.display_name)
                     break
         "conversation_reply":
@@ -252,7 +276,7 @@ func _physics_process(delta: float) -> void:
         return
     if _standalone:
         local_host.step(delta)
-    if is_instance_valid(partner):
+    if is_instance_valid(partner) and (remote == null or remote.active):
         player.face_point(partner.global_position, delta)
 
 func _process(delta: float) -> void:
@@ -287,9 +311,15 @@ func _process(delta: float) -> void:
         npc.presentation.tree.active = distance < (38.0 if economical else 61.0) ** 2
     if _review:
         var actual := player.get_real_velocity()
+        var remote_peer := []
+        for npc in inhabitants:
+            if npc.is_remote_human:
+                remote_peer = [npc.position.x, npc.position.y, npc.position.z]
+                break
         _bridge.tonsaiMetrics = JSON.stringify({
             "build": CampTouch.TouchTrace.BUILD,
             "fps": fps, "draws": draws, "primitives": primitives, "actors": inhabitants.size() + 1,
+            "remote_peer": remote_peer,
             "x": player.position.x, "y": player.position.y, "z": player.position.z, "yaw": player.yaw,
             "travel": player.travel_distance, "arrivals": local_host.arrivals(LOCATION) if local_host != null else 0,
             "clip": player.motion_clip, "pose": player.presentation.playback.get_current_node(),

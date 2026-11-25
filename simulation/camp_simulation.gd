@@ -23,7 +23,7 @@ const MAX_RECORDS := 500
 var people: Dictionary = {}
 var reservations: Dictionary = {}
 var objects := {"fire": {"lit": true}}
-var conversation := ""
+var conversations: Dictionary = {}
 var arrivals := 0
 
 func add(id: String, activity: String) -> void:
@@ -40,7 +40,7 @@ func _reserve(id: String, activity: String, tick: int) -> void:
 
 func arrived(id: String, activity: String, tick: int, rng: RandomNumberGenerator) -> bool:
     var person: Dictionary = people[id]
-    if person.activity != activity or person.stage != "travel" or conversation == id:
+    if person.activity != activity or person.stage != "travel" or conversations.values().has(id):
         return false
     person.stage = "occupied"
     person.deadline = tick + rng.randi_range(44, 112)
@@ -49,7 +49,7 @@ func arrived(id: String, activity: String, tick: int, rng: RandomNumberGenerator
 
 func travel_failed(id: String, activity: String, tick: int) -> bool:
     var person: Dictionary = people[id]
-    if person.activity != activity or person.stage != "travel" or conversation == id:
+    if person.activity != activity or person.stage != "travel" or conversations.values().has(id):
         return false
     _release(person, tick)
     return true
@@ -62,7 +62,7 @@ func _release(person: Dictionary, tick: int) -> void:
 
 func schedule(id: String, tick: int, physical: bool, rng: RandomNumberGenerator) -> void:
     var person: Dictionary = people[id]
-    if conversation == id:
+    if conversations.values().has(id):
         person.deadline += 1
         return
     if tick < int(person.deadline):
