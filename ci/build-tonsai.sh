@@ -70,11 +70,11 @@ if [[ "${TONSAI_PREPARE_SERVER:-0}" != 0 ]]; then
   fi
 fi
 cp "$stage/tonsai/generated/navigation.res" tonsai/generated/navigation.res
+if [[ "${TONSAI_STAGE_ONLY:-0}" == 1 ]]; then exit 0; fi
 run_godot --fixed-fps 60 --script res://tests/tonsai_test.gd
 run_godot --fixed-fps 60 --script res://tests/application_test.gd
 run_godot --script res://tests/credential_test.gd
 run_godot --script res://tests/benchmark_test.gd
-if [[ "${TONSAI_STAGE_ONLY:-0}" == 1 ]]; then exit 0; fi
 run_godot --export-release Web "$output/index.html"
 python3 - "$output" <<'PY'
 from pathlib import Path
