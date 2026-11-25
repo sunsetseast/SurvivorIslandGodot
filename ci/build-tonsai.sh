@@ -23,7 +23,7 @@ mkdir -p "$stage/tonsai/shaders" "$stage/tonsai/generated"
 cp tonsai/*.gd tonsai/*.tscn "$stage/tonsai/"
 cp tonsai/shaders/*.gdshader "$stage/tonsai/shaders/"
 cp tools/tonsai/bake_nav.gd tools/tonsai/bake_server_collision.gd "$stage/tools/tonsai/"
-cp tests/tonsai_test.gd tests/application_test.gd tests/credential_test.gd "$stage/tests/"
+cp tests/tonsai_test.gd tests/application_test.gd tests/credential_test.gd tests/benchmark_test.gd "$stage/tests/"
 cp character_lab/actor.gd "$stage/character_lab/"
 cp character_lab/assets/maeve.glb "$stage/character_lab/assets/"
 cp icon.svg "$stage/" 2>/dev/null || true
@@ -73,6 +73,7 @@ cp "$stage/tonsai/generated/navigation.res" tonsai/generated/navigation.res
 run_godot --fixed-fps 60 --script res://tests/tonsai_test.gd
 run_godot --fixed-fps 60 --script res://tests/application_test.gd
 run_godot --script res://tests/credential_test.gd
+run_godot --script res://tests/benchmark_test.gd
 if [[ "${TONSAI_STAGE_ONLY:-0}" == 1 ]]; then exit 0; fi
 run_godot --export-release Web "$output/index.html"
 python3 - "$output" <<'PY'

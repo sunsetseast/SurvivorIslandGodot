@@ -60,7 +60,7 @@ func _test() -> void:
     for cycle in 6:
         app._load(1)
         _check(app.locations.get_child_count() == 1, "One owned location")
-        var retired := weakref(app.locations.camp)
+        var retired: WeakRef = weakref(app.locations.camp)
         app._exit_session()
         await process_frame
         await process_frame
