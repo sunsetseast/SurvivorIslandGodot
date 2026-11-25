@@ -12,13 +12,17 @@ RUN GODOT_BIN=/usr/local/bin/godot bash ci/build-server.sh \
     && find build/server/.godot -mindepth 1 ! -name global_script_class_cache.cfg -delete
 
 FROM caddy:2.10.2 AS gateway
+# Caddy listens on an unprivileged port. Install a fresh copy without file capabilities.
+RUN install -m 0755 /usr/bin/caddy /tmp/caddy \
+    && caddy_capabilities="$(getcap /tmp/caddy)" \
+    && test -z "$caddy_capabilities"
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libfontconfig1 \
     && rm -rf /var/lib/apt/lists/* && useradd --system --create-home survivor
 COPY --from=bake /usr/local/bin/godot /usr/local/bin/godot
 COPY --from=bake /src/build/server /opt/survivor
-COPY --from=gateway /usr/bin/caddy /usr/local/bin/caddy
+COPY --from=gateway /tmp/caddy /usr/local/bin/caddy
 COPY server/Caddyfile server/entrypoint.sh /opt/
 WORKDIR /opt/survivor
 USER survivor
