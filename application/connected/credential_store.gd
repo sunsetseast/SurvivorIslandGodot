@@ -27,7 +27,11 @@ func restore_record() -> Dictionary:
         return {}
     return record
 
-func replace(value: Dictionary) -> void:
+func replace(value: Dictionary, persist := true) -> void:
+    if not persist:
+        clear()
+        _tokens = value.duplicate()
+        return
     _tokens = value.duplicate()
     if _backend == null:
         return

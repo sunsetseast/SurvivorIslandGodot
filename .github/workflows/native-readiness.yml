@@ -8,6 +8,9 @@ on:
       - 'ci/*native*'
       - 'ci/build-keychain.sh'
       - 'export_presets.cfg'
+concurrency:
+  group: native-readiness-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -70,7 +73,7 @@ jobs:
           export PATH="$HOME/.local/bin:$PATH"
           ln -s "$HOME/.local/bin/godot-4.7.2" "$HOME/.local/bin/godot"
           bash ci/install-native.sh
-      - run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;28.1.13356709"
+      - run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.1.0" "ndk;29.0.14206865"
       - name: Stage shared public-safe game
         env:
           TONSAI_STAGE_ONLY: '1'

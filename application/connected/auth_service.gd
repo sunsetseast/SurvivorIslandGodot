@@ -191,7 +191,7 @@ func _accept(value: Variant, recovery: bool, expected := "") -> bool:
             or not GameStateData.integer(expires, 1, 86400):
         return false
     _credentials.replace({"account": id, "access": access, "refresh": refresh,
-        "expires": int(Time.get_unix_time_from_system()) + int(expires)})
+        "expires": int(Time.get_unix_time_from_system()) + int(expires)}, not recovery)
     account = id
     email = str(user.get("email", ""))
     _recovery = recovery
