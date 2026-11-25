@@ -212,7 +212,7 @@ func _main(message := "") -> void:
         _brand_panel.add_child(_status)
 
 func _new_game() -> void:
-    _menu(Screen.NEW_GAME, "A new beginning", "Explore the playable Tonsai season.\nContestant selection and season customization arrive in the next Phase 4 milestones.\nChoose an empty slot to begin; existing seasons stay intact.")
+    _menu(Screen.NEW_GAME, "A new beginning", "Start the playable Tonsai season.\nChoose an empty save slot.\nSelection and season options arrive later.")
     _button("begin", "Choose Save Slot", _slots.bind(true)).theme_type_variation = "PrimaryButton"
     _button("back", "Back", _main)
 
@@ -564,6 +564,8 @@ func _menu(next: Screen, title: String, message: String) -> void:
     _ui.add_child(panel)
     if next == Screen.MAIN:
         panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+    elif next == Screen.NEW_GAME:
+        panel.add_theme_stylebox_override("panel", IslandTheme.parchment())
     var anchor := Control.PRESET_CENTER_BOTTOM if next == Screen.SESSION else Control.PRESET_CENTER
     panel.set_anchors_preset(anchor)
     _stack = VBoxContainer.new()
@@ -589,11 +591,18 @@ func _menu(next: Screen, title: String, message: String) -> void:
         var heading := Label.new()
         heading.text = title
         heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-        heading.theme_type_variation = "ParchmentHeading" if next == Screen.NEW_GAME else "SectionHeading"
+        heading.theme_type_variation = "SectionHeading"
+        if next == Screen.NEW_GAME:
+            heading.add_theme_color_override("font_color", IslandTheme.INK)
+            heading.add_theme_constant_override("outline_size", 0)
         if next != Screen.SESSION:
             heading.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
         _stack.add_child(heading)
     _status.text = message
+    if next == Screen.NEW_GAME:
+        _status.add_theme_color_override("font_color", IslandTheme.INK)
+        _status.add_theme_constant_override("outline_size", 0)
+        _status.add_theme_font_size_override("font_size", 18)
     _status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     _status.mouse_filter = Control.MOUSE_FILTER_IGNORE
     _stack.add_child(_status)
@@ -646,8 +655,11 @@ func _update_account_layout() -> void:
     var width := _ui.size.x / content_scale
     _account_panel.scale = Vector2.ONE * content_scale
     var menu_width := clampf(width * .30, 245, 310) if screen == Screen.MAIN else clampf(width - 88, 140, 560)
+    var frame := _account_panel.get_theme_stylebox("panel")
+    var vertical_margin := frame.get_content_margin(SIDE_TOP) + frame.get_content_margin(SIDE_BOTTOM)
+    var reserve := 32.0 if screen == Screen.MAIN else maxf(64.0, vertical_margin + 24.0)
     _account_scroll.custom_minimum_size = Vector2(menu_width,
-        clampf(_account_visible_height() / content_scale - (32.0 if screen == Screen.MAIN else 64.0), 90.0, 590.0))
+        clampf(_account_visible_height() / content_scale - reserve, 90.0, 590.0))
     _account_panel.reset_size()
     _position_panel(_account_panel, false)
 

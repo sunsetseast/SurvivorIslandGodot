@@ -58,10 +58,10 @@ static func parchment() -> StyleBox:
     box.set_texture_margin(SIDE_RIGHT, 105)
     box.set_texture_margin(SIDE_TOP, 70)
     box.set_texture_margin(SIDE_BOTTOM, 70)
-    box.content_margin_left = 52
-    box.content_margin_right = 52
-    box.content_margin_top = 34
-    box.content_margin_bottom = 34
+    box.content_margin_left = 72
+    box.content_margin_right = 72
+    box.content_margin_top = 70
+    box.content_margin_bottom = 70
     return box
 
 static func create() -> Theme:
@@ -89,7 +89,6 @@ static func create() -> Theme:
         theme.set_color("font_hover_pressed_color", type, Color.WHITE)
     theme.set_type_variation("PrimaryButton", "Button")
     theme.set_type_variation("ParchmentHeading", "Label")
-    theme.set_stylebox("normal", "ParchmentHeading", parchment())
     theme.set_color("font_color", "ParchmentHeading", INK)
     theme.set_constant("outline_size", "ParchmentHeading", 0)
     theme.set_font_size("font_size", "ParchmentHeading", HEADING)
