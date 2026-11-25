@@ -313,6 +313,8 @@ async def run(settings):
                 await reject(url, json.dumps({"v": 1, **payload}), token_b)
             b = await open_client(token_b)
             await b.wait("state", lambda m: m["active"])
+            # Drop the earlier loading snapshot before measuring this disconnection.
+            b.messages = deque((msg for msg in b.messages if msg["type"] != "state"), maxlen=100)
             await a.close()
             pause = await b.wait("state", lambda m: not m["active"], timeout=8)
             assert pause["view"]["tick"] >= checkpoint_tick

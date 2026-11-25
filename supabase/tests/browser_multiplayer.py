@@ -142,8 +142,7 @@ http://127.0.0.1:{args.web_port} {{
             other_browser = chromium.launch(executable_path=args.chromium, args=flags)
             location = f"http://127.0.0.1:{args.web_port}/?review"
             strategy = {"offline": False}
-            viewport = {"width": 756, "height": 348}
-            first, a, _ = boot(browser, location, backend, strategy, viewport=viewport)
+            first, a, _ = boot(browser, location, backend, strategy)
             a.set_default_timeout(45_000)
             seen_a = capture(a)
             print("Client A booted")
@@ -161,7 +160,7 @@ http://127.0.0.1:{args.web_port} {{
             button(a, "create")
             wait_browser(a, lambda: "room" in seen_a)
             print("Client A created a room")
-            second, b, _ = boot(other_browser, location, backend, strategy, viewport=viewport)
+            second, b, _ = boot(other_browser, location, backend, strategy)
             b.set_default_timeout(45_000)
             seen_b = capture(b)
             login(b, accounts[1][0], password)
