@@ -4,3 +4,6 @@ build/
 *.tmp
 
 /tonsai/generated/
+
+/supabase/.temp/
+/supabase/.branches/

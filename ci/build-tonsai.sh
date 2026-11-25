@@ -26,8 +26,10 @@ cp icon.svg "$stage/" 2>/dev/null || true
 # This stage is the sole export root. Source references and private likeness
 # files are outside the allowlist. Neither Phase 0 nor the lab is reconfigured.
 cp project.godot "$stage/"
-sed 's|^include_filter=""|include_filter="tonsai/generated/layout.json,tonsai/generated/heightfield.bin"|' \
-    export_presets.cfg | sed 's|^exclude_filter=""|exclude_filter="tests/*,tools/*"|' > "$stage/export_presets.cfg"
+sed -e 's|^include_filter=""|include_filter="tonsai/generated/layout.json,tonsai/generated/heightfield.bin"|' \
+    -e 's|^exclude_filter=""|exclude_filter="tests/*,tools/*"|' \
+    -e 's|html/experimental_virtual_keyboard=false|html/experimental_virtual_keyboard=true|' \
+    export_presets.cfg > "$stage/export_presets.cfg"
 if [[ -n "${TONSAI_REFERENCE:-}" ]]; then
   node tools/tonsai/prepare.mjs "$TONSAI_REFERENCE"
 else
