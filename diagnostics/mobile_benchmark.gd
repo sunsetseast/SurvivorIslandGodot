@@ -222,7 +222,9 @@ func _finish() -> void:
         "draw_calls_sample_mean": draws / maxi(1, monitor_count),
         "primitives_sample_mean": primitives / maxi(1, monitor_count),
         "static_memory_bytes": static_bytes if static_bytes > 0 else "unavailable: release template",
-        "render_memory_estimate": "unavailable: Compatibility/Web monitor is not reliable",
+        "render_texture_memory_estimate_bytes": _render_memory(RenderingServer.RENDERING_INFO_TEXTURE_MEM_USED),
+        "render_buffer_memory_estimate_bytes": _render_memory(RenderingServer.RENDERING_INFO_BUFFER_MEM_USED),
+        "render_total_memory_estimate_bytes": _render_memory(RenderingServer.RENDERING_INFO_VIDEO_MEM_USED),
         "animation_cost": "unavailable: no per-rig engine timing monitor",
         "last_simulation_step_usec": step_usec, "scene_load_usec": load_usec,
         "scene_unload_usec": unload_usec, "save_checkpoint_usec": "unavailable: benchmark never writes saves"
@@ -259,3 +261,8 @@ func _page_visibility(_args: Array) -> void:
 func _exit_tree() -> void:
     if _visibility != null:
         JavaScriptBridge.get_interface("document").removeEventListener("visibilitychange", _visibility)
+
+
+func _render_memory(monitor: RenderingServer.RenderingInfo) -> Variant:
+    var bytes := RenderingServer.get_rendering_info(monitor)
+    return bytes if bytes > 0 else "unavailable: backend did not report an estimate"

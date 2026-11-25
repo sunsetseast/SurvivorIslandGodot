@@ -26,9 +26,29 @@ jobs:
       - name: Record standard runner and selected Xcode
         run: |
           test "${{ runner.environment }}" = github-hosted
-          xcode-select -p
-          xcodebuild -version
-          xcrun --sdk iphoneos --show-sdk-version
+          python3 - <<'XCODE'
+          import glob, os, re, subprocess
+          choices = []
+          for app in glob.glob("/Applications/Xcode*.app"):
+              developer = app + "/Contents/Developer"
+              env = dict(os.environ, DEVELOPER_DIR=developer)
+              result = subprocess.run(["xcodebuild", "-version"], env=env, text=True, capture_output=True)
+              match = re.search(r"Xcode (\d+)(?:\.(\d+))?", result.stdout)
+              if match:
+                  version = (int(match[1]), int(match[2] or 0))
+                  print(developer, result.stdout.strip(), flush=True)
+                  if version[0] >= 26:
+                      choices.append((version, developer))
+          if not choices:
+              raise SystemExit("BLOCKED: pinned Godot 4.7.2 templates require Xcode 26+ SDK symbols; no compatible installed Xcode found. No signing purchase is needed.")
+          _, developer = max(choices)
+          env = dict(os.environ, DEVELOPER_DIR=developer)
+          with open(os.environ["GITHUB_ENV"], "a") as out:
+              out.write("DEVELOPER_DIR=" + developer + "\n")
+          print("Selected", developer)
+          subprocess.run(["xcodebuild", "-version"], env=env, check=True)
+          subprocess.run(["xcrun", "--sdk", "iphoneos", "--show-sdk-version"], env=env, check=True)
+          XCODE
       - run: bash ci/install-native.sh
       - name: Stage public assets once
         env:
@@ -38,6 +58,7 @@ jobs:
       - name: Compile device and simulator Keychain plugin
         run: bash ci/build-keychain.sh
       - name: Export unsigned Xcode project
+        id: ios_export
         run: |
           mkdir -p build/ios
           "$GODOT_BIN" --headless --path build/tonsai-project --editor --import --quit
@@ -47,9 +68,12 @@ jobs:
         run: |
           xcodebuild -project build/ios/SurvivorIsland.xcodeproj -scheme SurvivorIsland -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/ios-device CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
       - name: Compile simulator application
+        id: simulator
+        if: always() && steps.ios_export.outcome == 'success'
         run: |
           xcodebuild -project build/ios/SurvivorIsland.xcodeproj -scheme SurvivorIsland -configuration Release -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build/ios-simulator CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
       - name: Boot available simulator and launch
+        if: always() && steps.simulator.outcome == 'success'
         run: python3 ci/start-simulator.py
   android:
     if: github.event.repository.private == false
