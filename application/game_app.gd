@@ -1,13 +1,16 @@
 class_name SurvivorGameApp
 extends Node
 
-enum Screen { MAIN, SLOTS, SETTINGS, SESSION }
+enum Screen { MAIN, SLOTS, SETTINGS, SESSION, ACCOUNT }
 const AUTOSAVE_SECONDS := 30
-const STORE_PREFIX := "survivor-3a"
 
 var screen := Screen.MAIN
 var profile: PlayerProfile
-var saves: PersistenceProvider
+var saves: LocalSaveProvider
+var identity: SurvivorIdentityService
+var auth: SurvivorAuthService
+var cloud: SurvivorCloudSaveService
+var _accounts: SurvivorAccountMenu
 var session: LocalGameSession
 var locations := LocationManager.new()
 var slot := 0
@@ -24,6 +27,9 @@ var _review: JavaScriptObject
 var _visibility: JavaScriptObject
 var _hide: JavaScriptObject
 var _show: JavaScriptObject
+var _visual_resize: JavaScriptObject
+var _account_panel: PanelContainer
+var _account_scroll: ScrollContainer
 var _slot_mode := false
 var _confirm_slot := 0
 var _exit_confirmation := false
@@ -34,9 +40,18 @@ var _review_elapsed := 0.0
 
 func _ready() -> void:
     get_tree().auto_accept_quit = false
-    var store := LocalDataStore.new(STORE_PREFIX)
-    profile = PlayerProfile.new(store)
-    saves = LocalSaveProvider.new(store)
+    identity = SurvivorIdentityService.new()
+    profile = PlayerProfile.new(identity.guest_store)
+    saves = LocalSaveProvider.new(identity.guest_store)
+    var transport := SurvivorSupabaseTransport.new()
+    add_child(transport)
+    auth = SurvivorAuthService.new(transport)
+    add_child(auth)
+    cloud = SurvivorCloudSaveService.new(auth)
+    add_child(cloud)
+    _accounts = SurvivorAccountMenu.new(self)
+    auth.changed.connect(_identity_changed)
+    cloud.updated.connect(_cloud_updated)
     add_child(locations)
     var layer := CanvasLayer.new()
     layer.layer = 5
@@ -45,6 +60,7 @@ func _ready() -> void:
     _ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     _ui.mouse_filter = Control.MOUSE_FILTER_IGNORE
     layer.add_child(_ui)
+    _ui.resized.connect(_update_account_layout)
     if OS.has_feature("web"):
         var window := JavaScriptBridge.get_interface("window")
         if bool(JavaScriptBridge.eval("new URLSearchParams(location.search).has('review')")):
@@ -55,6 +71,9 @@ func _ready() -> void:
         JavaScriptBridge.get_interface("document").addEventListener("visibilitychange", _visibility)
         window.addEventListener("pagehide", _hide)
         window.addEventListener("pageshow", _show)
+        if window.visualViewport != null:
+            _visual_resize = JavaScriptBridge.create_callback(_visual_viewport_changed)
+            window.visualViewport.addEventListener("resize", _visual_resize)
     _main("Local storage is unavailable. Progress may be lost." if not profile.available else "")
 
 func _exit_tree() -> void:
@@ -63,6 +82,8 @@ func _exit_tree() -> void:
         JavaScriptBridge.get_interface("document").removeEventListener("visibilitychange", _visibility)
         window.removeEventListener("pagehide", _hide)
         window.removeEventListener("pageshow", _show)
+        if _visual_resize != null:
+            window.visualViewport.removeEventListener("resize", _visual_resize)
 
 func _visibility_changed(_args: Array) -> void:
     _suspend(bool(JavaScriptBridge.get_interface("document").hidden))
@@ -119,6 +140,9 @@ func _process(delta: float) -> void:
     for key: String in _actions:
         var center: Vector2 = _actions[key].get_global_rect().get_center() / size
         actions[key] = [center.x, center.y]
+    if screen == Screen.ACCOUNT or not auth.account.is_empty():
+        _review.survivorApp = JSON.stringify({"screen": Screen.keys()[screen], "actions": actions})
+        return
     var view := session.view("tonsai") if session != null else {}
     _review.survivorApp = JSON.stringify({"screen": Screen.keys()[screen], "actions": actions,
         "slot": slot, "revision": save_revision, "status": _status.text, "guest": profile.guest_id,
@@ -141,6 +165,7 @@ func _main(message := "") -> void:
     _button("new", "New Game", _slots.bind(true))
     _button("load", "Load Game", _slots.bind(false))
     _button("settings", "Settings", _settings)
+    _button("account", "Account & Cloud Saves" if not auth.account.is_empty() else "Account", _accounts.open)
 
 func _slots(creating: bool) -> void:
     _slot_mode = creating
@@ -180,10 +205,11 @@ func _delete(index: int, displayed: String) -> void:
         return
     _confirm_slot = 0
     var unchanged: bool = _delete_fingerprint == saves.inspect(index).get("fingerprint", "")
-    _draw_slots("Slot deleted." if unchanged and saves.erase(index) else "Slot changed or could not be deleted.")
+    var erased := unchanged and cloud.reset(index) and saves.erase(index)
+    _draw_slots("Slot deleted." if erased else "Slot changed or could not be deleted.")
 
 func _owned(entry: Dictionary) -> bool:
-    return entry.status == "valid" and entry.state.player_id == profile.guest_id
+    return entry.status == "valid" and (cloud.store != null or entry.state.player_id == profile.guest_id)
 
 func _settings() -> void:
     _menu(Screen.SETTINGS, "Settings", "")
@@ -210,7 +236,11 @@ func _new(index: int) -> void:
     if saves.inspect(index).status != "empty":
         _draw_slots("Choose an empty slot.")
         return
-    var sim := SeasonSimulation.new(profile.guest_id, GameStateData.new_id(), randi())
+    var principal := profile.guest_id if cloud.store == null else identity.season_principal(cloud.store)
+    if principal.is_empty():
+        _status.text = "Local storage is unavailable."
+        return
+    var sim := SeasonSimulation.new(principal, GameStateData.new_id(), randi())
     if _enter(sim, index, 0):
         _save(false)
 
@@ -223,7 +253,7 @@ func _load(index: int) -> void:
         _status.text = "Recovered the previous checkpoint."
 
 func _enter(sim: SeasonSimulation, index: int, revision: int) -> bool:
-    session = LocalGameSession.new(sim, profile.guest_id)
+    session = LocalGameSession.new(sim, sim.player_id)
     slot = index
     save_revision = revision
     _last_save_tick = sim.tick
@@ -270,7 +300,8 @@ func _save(manual: bool) -> bool:
         _status.text = "Could not checkpoint this position."
         return false
     var started := Time.get_ticks_usec()
-    var result := saves.write(slot, session.checkpoint(), save_revision)
+    var active_store := saves
+    var result := active_store.write(slot, session.checkpoint(), save_revision)
     _save_usec = Time.get_ticks_usec() - started
     if result.status != "valid":
         _status.text = "Save failed · " + String(result.status).replace("_", " ")
@@ -279,6 +310,10 @@ func _save(manual: bool) -> bool:
     _last_checkpoint_tick = tick
     _dirty = false
     _status.text = "Saved to slot %d" % slot
+    if active_store == cloud.saves:
+        cloud.schedule(slot, manual)
+        if manual:
+            _status.text += " · cloud sync pending"
     return true
 
 func _exit_session() -> void:
@@ -307,6 +342,8 @@ func _leave() -> void:
 func _menu(next: Screen, title: String, message: String) -> void:
     screen = next
     _actions.clear()
+    _account_panel = null
+    _account_scroll = null
     for child: Node in _ui.get_children():
         _ui.remove_child(child)
         child.queue_free()
@@ -330,14 +367,28 @@ func _menu(next: Screen, title: String, message: String) -> void:
     _stack = VBoxContainer.new()
     _stack.custom_minimum_size.x = 300 if next == Screen.SESSION else 450
     _stack.add_theme_constant_override("separation", 7)
-    panel.add_child(_stack)
+    if next == Screen.ACCOUNT:
+        var scroll := ScrollContainer.new()
+        scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+        scroll.follow_focus = true
+        _account_panel = panel
+        _account_scroll = scroll
+        panel.add_child(scroll)
+        _update_account_layout()
+        _stack.custom_minimum_size.x = 0
+        _stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        scroll.add_child(_stack)
+        _status = Label.new()
+        _status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    else:
+        panel.add_child(_stack)
+        _status = Label.new()
     if not title.is_empty():
         var heading := Label.new()
         heading.text = title
         heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
         heading.add_theme_font_size_override("font_size", 31)
         _stack.add_child(heading)
-    _status = Label.new()
     _status.text = message
     _status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     _status.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -347,8 +398,26 @@ func _menu(next: Screen, title: String, message: String) -> void:
 
 func _position_panel(panel: PanelContainer, bottom: bool) -> void:
     var viewport := _ui.size
-    var y := viewport.y - panel.size.y - 18.0 if bottom else (viewport.y - panel.size.y) * .5
+    var height := _account_visible_height() if panel == _account_panel else viewport.y
+    var y := height - panel.size.y - 18.0 if bottom else maxf(0.0, (height - panel.size.y) * .5)
     panel.position = Vector2((viewport.x - panel.size.x) * .5, y)
+
+func _visual_viewport_changed(_args: Array) -> void:
+    _update_account_layout()
+
+func _account_visible_height() -> float:
+    if _visual_resize != null:
+        var window := JavaScriptBridge.get_interface("window")
+        return _ui.size.y * clampf(float(window.visualViewport.height) / maxf(1.0, float(window.innerHeight)), 0.2, 1.0)
+    return _ui.size.y
+
+func _update_account_layout() -> void:
+    if _account_panel == null:
+        return
+    _account_scroll.custom_minimum_size = Vector2(minf(480.0, _ui.size.x - 40.0),
+        maxf(110.0, minf(590.0, _account_visible_height() - 36.0)))
+    _account_panel.reset_size()
+    _position_panel(_account_panel, false)
 
 func _button(key: String, label: String, action: Callable, parent: Control = null) -> Button:
     var button := Button.new()
@@ -359,3 +428,22 @@ func _button(key: String, label: String, action: Callable, parent: Control = nul
     (parent if parent != null else _stack).add_child(button)
     _actions[key] = button
     return button
+
+func _identity_changed() -> void:
+    var previous := saves
+    var signed_in := not auth.account.is_empty() and not auth.recovery_pending()
+    var active_store := identity.store_for(auth.account if signed_in else "")
+    var changed_namespace := previous.store.storage_prefix != active_store.storage_prefix
+    if session != null and changed_namespace:
+        _save(false)
+        locations.leave()
+        session = null
+        slot = 0
+    saves = LocalSaveProvider.new(active_store)
+    cloud.bind(active_store if signed_in else null, saves if signed_in else null)
+    if changed_namespace and screen == Screen.SESSION:
+        _main("Session expired. Sign in to resume your account saves.")
+
+func _cloud_updated(index: int, status: String) -> void:
+    if session != null and slot == index and screen == Screen.SESSION:
+        _status.text = "Slot %d · %s" % [index, SurvivorAccountMenu.message(status)]

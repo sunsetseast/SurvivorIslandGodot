@@ -39,12 +39,19 @@ func inspect(slot: int) -> Dictionary:
     return best
 
 func write(slot: int, state: Dictionary, expected_revision: int) -> Dictionary:
+    return _write(slot, state, expected_revision, false)
+
+# A user-confirmed cloud replacement keeps the prior generation recoverable.
+func replace(slot: int, state: Dictionary, expected_revision: int) -> Dictionary:
+    return _write(slot, state, expected_revision, true)
+
+func _write(slot: int, state: Dictionary, expected_revision: int, replacement: bool) -> Dictionary:
     var previous := inspect(slot)
     if not previous.status in ["empty", "valid"]:
         return previous
     if int(previous.get("save_revision", 0)) != expected_revision:
         return {"status": "conflict"}
-    if previous.status == "valid" and (previous.state.season_id != state.season_id \
+    if not replacement and previous.status == "valid" and (previous.state.season_id != state.season_id \
             or int(previous.state.revision) > int(state.revision)):
         return {"status": "conflict"}
     var next_revision := expected_revision + 1
