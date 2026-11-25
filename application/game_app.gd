@@ -259,7 +259,7 @@ func _layout_brand() -> void:
     _brand_panel.scale = Vector2.ONE * factor
     _brand_panel.size.x = maxf(250, _ui.size.x / factor * .43)
     _brand_panel.position = Vector2(_ui.size.x * .065, _ui.size.y * .24)
-    _brand_panel.visible = _ui.size.x / factor > 650
+    _brand_panel.visible = _ui.size.x / factor > 800
 
 func _open_multiplayer() -> void:
     if auth.account.is_empty() or auth.recovery_pending():
@@ -616,7 +616,7 @@ func _position_panel(panel: PanelContainer, bottom: bool) -> void:
             inset = area.position * viewport / window
             height = minf(height, area.end.y * viewport.y / window.y)
     if screen == Screen.MAIN:
-        panel.position = Vector2(_safe_menu_x(viewport.x * .56 if viewport.x / _menu_scale() > 650 else (viewport.x - displayed_size.x) * .5, displayed_size.x),
+        panel.position = Vector2(_safe_menu_x(minf(viewport.x * .56, viewport.x - displayed_size.x - 32 * _menu_scale()) if viewport.x / _menu_scale() > 800 else (viewport.x - displayed_size.x) * .5, displayed_size.x),
             maxf(12, (height - displayed_size.y) * .5))
         return
     var y := height - displayed_size.y - 18.0 if bottom else maxf(inset.y, (height - displayed_size.y + inset.y) * .5)
