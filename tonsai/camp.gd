@@ -95,6 +95,8 @@ func _ready() -> void:
     loaded = true
 
 func _exit_tree() -> void:
+    if session != null and session.resolved.is_connected(_apply_talk_result):
+        session.resolved.disconnect(_apply_talk_result)
     if _bridge != null and _review:
         _bridge.tonsaiView = null
         _bridge.tonsaiMetrics = null

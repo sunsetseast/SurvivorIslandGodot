@@ -85,4 +85,5 @@ func _process(delta: float) -> void:
     if is_instance_valid(face):
         var value := face.get_blend_shape_value(_smile_index)
         var target := 0.8 if smile_enabled else 0.0
-        face.set_blend_shape_value(_smile_index, move_toward(value, target, delta * 3.5))
+        if not is_equal_approx(value, target):
+            face.set_blend_shape_value(_smile_index, move_toward(value, target, delta * 3.5))

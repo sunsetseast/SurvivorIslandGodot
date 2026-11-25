@@ -42,6 +42,11 @@ var _save_usec := 0
 var _review_elapsed := 0.0
 
 func _ready() -> void:
+    if ProjectSettings.get_setting("survivor_diagnostics/enabled", false) and OS.has_feature("web") \
+            and bool(JavaScriptBridge.eval("new URLSearchParams(location.search).has('benchmark')")):
+        add_child(load("res://diagnostics/mobile_benchmark.gd").new())
+        set_physics_process(false)
+        return
     get_tree().auto_accept_quit = false
     identity = SurvivorIdentityService.new()
     profile = PlayerProfile.new(identity.guest_store)
@@ -77,6 +82,7 @@ func _ready() -> void:
         if window.visualViewport != null:
             _visual_resize = JavaScriptBridge.create_callback(_visual_viewport_changed)
             window.visualViewport.addEventListener("resize", _visual_resize)
+    auth.restore_session.call_deferred()
     _main("Local storage is unavailable. Progress may be lost." if not profile.available else "")
 
 func _exit_tree() -> void:

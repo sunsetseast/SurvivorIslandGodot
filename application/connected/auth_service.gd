@@ -21,6 +21,25 @@ var _sign_in_attempt := 0
 func _init(adapter: SurvivorSupabaseTransport) -> void:
     transport = adapter
 
+func restore_session() -> void:
+    var record := _credentials.restore_record()
+    if record.is_empty() or not account.is_empty():
+        return
+    var generation := epoch
+    var attempt := _sign_in_attempt
+    var result := await transport.send(AUTH + "/token?grant_type=refresh_token", POST,
+        {"refresh_token": record.refresh})
+    if generation != epoch or attempt != _sign_in_attempt:
+        return
+    if result.ok:
+        if _accept(result.data, false, str(record.account)):
+            changed.emit()
+        else:
+            clear()
+    elif int(result.status) in [400, 401, 403]:
+        clear()
+
+
 func register(address: String, password: String) -> Dictionary:
     if not _email_valid(address) or password.length() < MIN_PASSWORD or password.length() > 72:
         return _failure("invalid_form")
@@ -157,12 +176,12 @@ func _refresh(generation: int, expired: String) -> bool:
     refresh_finished.emit()
     return accepted
 
-func _accept(value: Variant, recovery: bool) -> bool:
+func _accept(value: Variant, recovery: bool, expected := "") -> bool:
     if value is not Dictionary or value.get("user") is not Dictionary:
         return false
     var user: Dictionary = value.user
     var id: String = str(user.get("id", ""))
-    if not SurvivorIdentityService.valid_account(id) or (not account.is_empty() and account != id) \
+    if (not expected.is_empty() and id != expected) or not SurvivorIdentityService.valid_account(id) or (not account.is_empty() and account != id) \
             or user.get("email_confirmed_at") == null:
         return false
     var access: Variant = value.get("access_token")
@@ -171,7 +190,7 @@ func _accept(value: Variant, recovery: bool) -> bool:
     if access is not String or refresh is not String or access.is_empty() or refresh.is_empty() \
             or not GameStateData.integer(expires, 1, 86400):
         return false
-    _credentials.replace({"access": access, "refresh": refresh,
+    _credentials.replace({"account": id, "access": access, "refresh": refresh,
         "expires": int(Time.get_unix_time_from_system()) + int(expires)})
     account = id
     email = str(user.get("email", ""))
