@@ -8,10 +8,14 @@ func _initialize() -> void:
     for tick in 100:
         simulation.advance("")
     var local := SaveCodec.encode(simulation.snapshot(), 1, 1735689600)
-    assert(SaveCodec.decode(local).status == "valid")
+    var restored := SaveCodec.decode(local)
+    assert(restored.status == "valid")
+    # This also covers the floating-point representation seen after Web import
+    # and restoration, where a round-tripped tick is serialized as 100.0.
+    var upload := SaveCodec.encode(restored.state, int(restored.save_revision), int(restored.timestamp))
     var file := FileAccess.open(args[0], FileAccess.WRITE)
     assert(file != null)
-    file.store_string(local)
+    file.store_string(upload)
     file.close()
-    print("Integration checkpoint: %d bytes" % local.to_utf8_buffer().size())
+    print("Integration checkpoint: %d bytes" % upload.to_utf8_buffer().size())
     quit()

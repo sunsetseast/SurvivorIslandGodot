@@ -66,8 +66,15 @@ def remote_snapshot(backend, session):
     return row, json.loads(json.loads(snapshot)["payload"])["state"]
 
 
-def boot(browser, base, backend, strategy):
+def boot(browser, base, backend, strategy, guest_fixture=None):
     context = browser.new_context(viewport=VIEWPORT, has_touch=True)
+    if guest_fixture is not None:
+        state = json.loads(json.loads(guest_fixture)["payload"])["state"]
+        for key, value in {
+            "survivor-3a-guest": state["player_id"],
+            "survivor-3a-slot-1-0": guest_fixture,
+        }.items():
+            context.add_init_script(f"localStorage.setItem({json.dumps(key)}, {json.dumps(value)})")
 
     def relay(route):
         path = route.request.url.removeprefix(PRODUCTION)
@@ -88,7 +95,7 @@ def boot(browser, base, backend, strategy):
     return context, page, round((monotonic() - start) * 1000)
 
 
-def run(backend, directory, chromium):
+def run(backend, directory, chromium, guest_fixture=None):
     suffix = uuid4().hex
     email_a, email_b = [f"browser-{label}-{suffix}@example.test" for label in ("a", "b")]
     password = "Browser-Temp!" + suffix
@@ -100,12 +107,13 @@ def run(backend, directory, chromium):
         Thread(target=server.serve_forever, daemon=True).start()
         url = f"http://127.0.0.1:{server.server_port}/?review"
         browser = playwright.chromium.launch(executable_path=chromium, args=BROWSER_FLAGS)
-        first, a1, cold = boot(browser, url, backend, strategy)
-        button(a1, "new")
-        button(a1, "slot1")
-        review(a1, 'app.screen === "SESSION"')
-        button(a1, "menu")
-        review(a1, 'app.screen === "MAIN"')
+        first, a1, cold = boot(browser, url, backend, strategy, guest_fixture)
+        if guest_fixture is None:
+            button(a1, "new")
+            button(a1, "slot1")
+            review(a1, 'app.screen === "SESSION"')
+            button(a1, "menu")
+            review(a1, 'app.screen === "MAIN"')
         login(a1, email_a, password)
         button(a1, "guest_import")
         button(a1, "guest1")
@@ -118,7 +126,8 @@ def run(backend, directory, chromium):
             cloud = remote_snapshot(backend, token_a)
             if cloud:
                 break
-        assert cloud and cloud[1] == local_snapshot(a1, account), "Guest import changed the snapshot"
+        assert cloud is not None, "Guest import did not reach the backend"
+        assert cloud[1] == local_snapshot(a1, account), "Guest import changed the snapshot"
         import_ms = round((monotonic() - start) * 1000)
         assert a1.evaluate("Object.keys(localStorage).some(k=>k.startsWith('survivor-3a-slot-1-'))")
 
@@ -135,11 +144,16 @@ def run(backend, directory, chromium):
         review(a2, 'app.screen === "SESSION"')
 
         strategy["offline"] = True
-        button(a2, "save")
         previous = cloud[0]["revision"]
-        assert remote_snapshot(backend, token_a)[0]["revision"] == previous
+        old_state_revision = cloud[1]["revision"]
+        button(a2, "save")
+        started = monotonic()
         local = local_snapshot(a2, account)
-        assert local["revision"] > cloud[1]["revision"]
+        while local["revision"] <= old_state_revision and monotonic() - started < 30:
+            a2.wait_for_timeout(300)
+            local = local_snapshot(a2, account)
+        assert local["revision"] > old_state_revision
+        assert remote_snapshot(backend, token_a)[0]["revision"] == previous
         a2.wait_for_timeout(600)
         strategy["offline"] = False
         started = monotonic()
@@ -151,13 +165,18 @@ def run(backend, directory, chromium):
         assert cloud[0]["revision"] > previous and cloud[1] == local, "Offline checkpoint did not synchronize"
         reconnect_ms = round((monotonic() - started) * 1000)
 
+        second.close()
+        a1.bring_to_front()
         button(a1, "back")
+        review(a1, 'app.screen === "MAIN"')
         button(a1, "account")
         button(a1, "sign_out")
         review(a1, "app.actions.sign_in")
         button(a1, "back")
+        review(a1, 'app.screen === "MAIN"')
         login(a1, email_b, password)
         button(a1, "back")
+        review(a1, 'app.screen === "MAIN"')
         button(a1, "load")
         review(a1, 'app.screen === "SLOTS"')
         assert not a1.evaluate("Object.keys(localStorage).some(k=>k.startsWith('survivor-3b-account-' + "
@@ -168,7 +187,6 @@ def run(backend, directory, chromium):
         review_data = a1.evaluate("JSON.parse(window.survivorApp)")
         assert set(review_data) == {"screen", "actions"}
         first.close()
-        second.close()
         browser.close()
     for token in (token_a, token_b):
         assert backend.request("/functions/v1/delete-player", {"password": password}, token)[0] == 200
@@ -181,6 +199,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("build", type=Path)
     parser.add_argument("--chromium")
+    parser.add_argument("--guest-fixture", type=Path,
+                        help="Start the first browser with a previous game-generated guest checkpoint")
     args = parser.parse_args()
+    fixture = args.guest_fixture.read_text() if args.guest_fixture else None
     run(Backend("http://127.0.0.1:54321", os.environ["SURVIVOR_TEST_PUBLIC_KEY"],
-                "http://127.0.0.1:54324"), str(args.build.resolve()), args.chromium)
+                "http://127.0.0.1:54324"), str(args.build.resolve()), args.chromium, fixture)

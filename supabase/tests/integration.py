@@ -124,6 +124,12 @@ def run(backend, snapshot):
     invalid = json.dumps({"payload": bad, "sha256": hashlib.sha256(bad.encode()).hexdigest()})
     assert backend.rpc("put", {**create, "snapshot": invalid}, a)[1]["status"] == "invalid_snapshot"
 
+    payload = json.loads(wrapper["payload"])
+    payload["state"]["tick"] += .5
+    bad = json.dumps(payload)
+    fractional = json.dumps({"payload": bad, "sha256": hashlib.sha256(bad.encode()).hexdigest()})
+    assert backend.rpc("put", {**create, "snapshot": fractional}, a)[1]["status"] == "invalid_snapshot"
+
     def contender():
         request = {**create, "expected": 1, "operation": str(uuid4())}
         return request, backend.rpc("put", request, a)[1]
