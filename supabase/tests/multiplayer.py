@@ -91,6 +91,8 @@ class Client:
         if note["type"] == "camp":
             self.camp = {"cast": note["cast"], "objects": note["objects"]}
         elif note["type"] == "state":
+            if not self.state:
+                asyncio.create_task(self.send("ready"))
             note["view"].update(self.camp)
             self.state = note
         elif note["type"] == "room":
@@ -248,6 +250,8 @@ async def run(settings):
             start_a, start_b = await asyncio.gather(a.wait("state"), b.wait("state"))
             assert a.room["controlled"] == "explorer" and b.room["controlled"] == "jeremy"
             assert len(start_a["movement"]) == 6 and start_a["view"]["tick"] == start_b["view"]["tick"]
+            assert not start_a["active"] and not start_b["active"]
+            await asyncio.gather(a.wait("state", lambda m: m["active"]), b.wait("state", lambda m: m["active"]))
             roster = sql(dsn, """select count(*) from survivor_multiplayer.recovery,
                 jsonb_each(payload->'season'->'roster');""")
             assert roster == "18"
@@ -308,7 +312,7 @@ async def run(settings):
             ]:
                 await reject(url, json.dumps({"v": 1, **payload}), token_b)
             b = await open_client(token_b)
-            await b.wait("state")
+            await b.wait("state", lambda m: m["active"])
             await a.close()
             pause = await b.wait("state", lambda m: not m["active"], timeout=8)
             assert pause["view"]["tick"] >= checkpoint_tick
@@ -323,7 +327,7 @@ async def run(settings):
             b = await open_client(token_b)
             await old_b.wait("fatal", lambda m: m["reason"] == "connection_replaced")
             await asyncio.wait_for(old_b.socket.wait_closed(), 4)
-            await b.wait("state")
+            await b.wait("state", lambda m: m["active"])
             await a.close()
             await b.close()
             await asyncio.sleep(.6)

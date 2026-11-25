@@ -176,6 +176,10 @@ func _receive(message: Dictionary, now: int) -> void:
                 if not active:
                     resolved.emit({"ok": true, "event": {"type": "conversation_closed"}})
                 _status("Season active" if active else "Season suspended · Waiting for both players")
+            if first_frame and connected and _socket != null:
+                _deadline = Time.get_ticks_msec() + 12_000
+                # State observers load the location before this transport acknowledgement.
+                Wire.send(_socket, "ready")
         "journal_reset":
             _journal.clear()
         "journal":

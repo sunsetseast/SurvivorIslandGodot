@@ -11,6 +11,7 @@ const MAX_CONNECTIONS := 8
 const AUTH_MS := 12_000
 const VERIFY_MS := 45_000
 const HEARTBEAT_MS := 12_000
+const LOAD_TIMEOUT_MS := 45_000
 const GRACE_MS := 5_000
 const CHECKPOINT_MS := 15_000
 const SNAPSHOT_STEPS := 3
@@ -30,6 +31,8 @@ class Connection extends RefCounted:
     var verify_deadline := 0
     var closed := false
     var move_seq := 0
+    var ready := false
+    var initial_state_at := 0
     var last_talk: Dictionary = {}
     var knowledge_dirty := true
     var last_camp := {}
@@ -140,7 +143,10 @@ func _poll() -> void:
         if peer.closed or peer.socket.get_ready_state() >= WebSocketPeer.STATE_CLOSING:
             _drop(peer)
             continue
-        if now - peer.last_seen > HEARTBEAT_MS or (peer.account.is_empty() and now > peer.opened + AUTH_MS) \
+        var loading := peer.initial_state_at > 0 and not peer.ready
+        if (loading and now - peer.initial_state_at > LOAD_TIMEOUT_MS) \
+                or (not loading and now - peer.last_seen > HEARTBEAT_MS) \
+                or (peer.account.is_empty() and now > peer.opened + AUTH_MS) \
                 or (peer.verifying and now > peer.verify_deadline) \
                 or (peer.expires > 0 and peer.expires <= int(Time.get_unix_time_from_system())):
             _drop(peer)
@@ -193,8 +199,11 @@ func _request(peer: Connection, request: Dictionary, now: int) -> void:
                 _send(peer, "error", {"reason": "sign_in_required"})
                 return
             match request.type:
+                "ready":
+                    if peer.initial_state_at > 0:
+                        peer.ready = true
                 "move":
-                    if not critical and _active(now):
+                    if peer.ready and not critical and _active(now):
                         var actor := _actor(peer)
                         if not actor.is_empty() and int(request.seq) > peer.move_seq:
                             peer.move_seq = int(request.seq)
@@ -301,14 +310,19 @@ func _actor(peer: Connection) -> String:
             return actor
     return ""
 
-func _available() -> int:
+func _available(require_ready := false) -> int:
     var count := 0
     for account: String in owners.values():
-        count += int(by_account.has(account))
+        var peer: Connection = by_account.get(account)
+        count += int(peer != null and (not require_ready or peer.ready))
     return count
 
+func _controller_ready(actor: String) -> bool:
+    var peer: Connection = by_account.get(owners[actor])
+    return peer != null and peer.ready
+
 func _active(now: int) -> bool:
-    var available := _available()
+    var available := _available(true)
     return simulation != null and not stopping and (available == 2 or (available == 1 and now < grace_until))
 
 func _drop(peer: Connection) -> void:
@@ -323,7 +337,7 @@ func _drop(peer: Connection) -> void:
     var actor := _actor(peer)
     by_account.erase(peer.account)
     if simulation != null and not actor.is_empty():
-        if _available() == 1 and reported_active:
+        if peer.ready and _available(true) == 1 and reported_active:
             grace_until = Time.get_ticks_msec() + GRACE_MS
         bodies[actor].clear_input()
         simulation.camps[LOCATION].conversations.erase(actor)
@@ -367,7 +381,7 @@ func _step() -> void:
         for id: String in bodies:
             var body := bodies[id]
             if body.human:
-                if by_account.has(owners[id]):
+                if _controller_ready(id):
                     body.drive(delta, bodies.get(camp.conversations.get(id, "")))
             else:
                 var conversation_actor: Variant = camp.conversations.find_key(id)
@@ -400,8 +414,10 @@ func _broadcast(active: bool) -> void:
             camp.conversations.has(id) or camp.conversations.values().has(id)]
     for account: String in owners.values():
         var peer: Connection = by_account.get(account)
-        if peer == null:
+        if peer == null or (not peer.ready and peer.initial_state_at != 0):
             continue
+        if peer.initial_state_at == 0:
+            peer.initial_state_at = Time.get_ticks_msec()
         var actor := _actor(peer)
         var projection := simulation.project(account, LOCATION, peer.knowledge_dirty)
         var knowledge: Variant = projection.get("knowledge")
@@ -419,13 +435,13 @@ func _broadcast(active: bool) -> void:
             _send(peer, "camp", public_camp)
             peer.last_camp = public_camp
         _send(peer, "state", {"view": {"tick": projection.tick, "day": projection.day,
-            "phase": projection.phase}, "movement": movement, "active": active,
+            "phase": projection.phase}, "movement": movement, "active": active and peer.ready,
             "ack_move": bodies[actor].applied, "next_command": int(receipt.get("seq", 0)) + 1})
         broadcasts += 1
 
 func _talk(peer: Connection, request: Dictionary) -> void:
     var actor := _actor(peer)
-    if simulation == null or actor.is_empty():
+    if simulation == null or actor.is_empty() or not peer.ready:
         return
     if critical:
         _reject(peer, request.id, "checkpoint_pending")

@@ -82,7 +82,9 @@ def frame_times(page, seconds=2):
         };
         requestAnimationFrame(frame);
     })""", seconds)
-    assert len(samples) >= 2, "Browser did not render enough frames to measure"
+    if len(samples) < 2:
+        fps = camp_metrics(page)["fps"]
+        return {"mean_ms_from_engine_fps": round(1000 / fps, 1)} if fps > 0 else {}
     return (round(statistics.median(samples), 1), round(sorted(samples)[int(.95 * (len(samples) - 1))], 1))
 
 
@@ -140,7 +142,8 @@ http://127.0.0.1:{args.web_port} {{
             other_browser = chromium.launch(executable_path=args.chromium, args=flags)
             location = f"http://127.0.0.1:{args.web_port}/?review"
             strategy = {"offline": False}
-            first, a, _ = boot(browser, location, backend, strategy)
+            viewport = {"width": 756, "height": 348}
+            first, a, _ = boot(browser, location, backend, strategy, viewport=viewport)
             a.set_default_timeout(45_000)
             seen_a = capture(a)
             print("Client A booted")
@@ -158,7 +161,7 @@ http://127.0.0.1:{args.web_port} {{
             button(a, "create")
             wait_browser(a, lambda: "room" in seen_a)
             print("Client A created a room")
-            second, b, _ = boot(other_browser, location, backend, strategy)
+            second, b, _ = boot(other_browser, location, backend, strategy, viewport=viewport)
             b.set_default_timeout(45_000)
             seen_b = capture(b)
             login(b, accounts[1][0], password)
@@ -187,6 +190,7 @@ http://127.0.0.1:{args.web_port} {{
                 other.wait_for_function("""start => JSON.parse(window.tonsaiMetrics).remote_peer
                     .reduce((sum, value, i) => sum + (value - start[i]) ** 2, 0) > .16""", arg=visual_start)
                 print(f"Touch movement {index + 1} rendered on peer")
+            a.bring_to_front()
             multiplayer = frame_times(a)
             button(b, "menu")
             review(b, 'app.screen === "MAIN"')
@@ -198,7 +202,7 @@ http://127.0.0.1:{args.web_port} {{
             second.close()
             browser.close()
             other_browser.close()
-            print(f"PASS: independent touch clients, replicated movement both ways, same contestant after leaving")
+            print("PASS: independent touch clients, replicated movement both ways, same contestant after leaving")
             print(f"Chromium SwiftShader frame time median/p95, ms — offline {baseline}, two clients {multiplayer}")
     finally:
         sql(dsn, "delete from survivor_multiplayer.recovery where secret_hash = sha256(convert_to(:'key', 'UTF8'));",

@@ -10,7 +10,7 @@ const MAX_PENDING_BYTES := 65_536
 const CODE_LENGTH := 12
 const CLIENT_FIELDS := {
     "auth": ["token"], "renew": ["token"], "create": [], "join": ["code"],
-    "resume": [], "start": [], "ping": [],
+    "resume": [], "start": [], "ready": [], "ping": [],
     "move": ["seq", "x", "z", "run", "dive", "vertical"],
     "talk": ["seq", "id", "kind", "target", "topic"],
 }
