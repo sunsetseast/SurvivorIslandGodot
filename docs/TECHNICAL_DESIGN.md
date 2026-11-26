@@ -252,8 +252,8 @@ same screen renders the text-title fallback. Keep that variable unset in public 
 | Journey/arrival.png, Screens/beach.png | Visual reference only; live Tonsai replaces illustrated home backgrounds. No imported screen textures. |
 | Survivant.ttf | Approved private global font; rights verification required before public distribution. Noto Sans remains the licensed public/glyph fallback. |
 
-The private build mechanism must never ingest contestant likenesses. No reference artwork
-directory is imported wholesale. No production/commercial affiliation or clearance is claimed.
+The Phase 4A UI staging helper does not ingest contestant likenesses. Phase 4B adds a
+separate explicit private cast stage, described below. No reference artwork directory is imported wholesale. No production/commercial affiliation or clearance is claimed.
 
 Verification: Godot 4.7.2 Compatibility Web export; foundation, Tonsai, application,
 title-boundary, credential-mock and all 16 benchmark configurations passed. Six warm
@@ -292,3 +292,76 @@ CI run 45689748366 failed at review_web.py:333: the test tapped New Game and wai
 SLOTS, while the deliberate Phase 4A boundary correctly returned NEW_GAME. The test now
 asserts that screen has no season, taps Choose Save Slot, then preserves all existing
 save/Continue, movement, swimming and touch-corruption assertions.
+
+## Phase 4B — contestant selection and Phase 4C boundary
+
+Base: main `7435d56`, merged PR #11, including approved Phase 4A head
+`ffc1622f1303b7de3e2d824081c62deb4726ca86`. Godot 4.7.2 / Compatibility, single-threaded Web.
+
+The immutable catalog is reconciled by `tools/selection/stage_private_cast.py` against
+SurvivorIsland2025 `cf894e578d77fce1e588d793dfc8d14f61ec7628` (`GameData.js`, approved
+#344 fixture, protected fixture and calibration document) and SurvivorIsland3Dprototype
+`708a21c43b4b2969aa28bf2142005e4f5df0bcdf` (`cast.json`, `CAST_MATRIX.md`). All current
+source fields must agree; the older approved fixture omits only campcraft. No rating,
+trait class, gameplay style or runtime starting default is recalibrated. The private
+manifest records inspected revisions and SHA256s. Original IDs 1–18 do not depend on art.
+The loader validates all 27 original field mappings, category sums /50 and ratings /10,
+and returns deep copies. Mutable health, hunger, water, rest, threat, vote state, roles
+and resource starting defaults are separate from catalog attributes. Future relationships
+and inventory belong to season state; browsing never creates them or a simulation.
+
+Debut season and visual reference season are independent metadata. The developer's
+Heroes vs. Villains overrides apply to IDs 4, 10, 11, 13, 16 and 18; the other twelve
+retain their approved Cast Matrix looks. Portraits are existing presentation fallbacks,
+not assertions that their current clothing realizes the future model specification.
+
+New Game opens the landscape selection screen directly. Trait and gender filters
+intersect; changing filters selects the first eligible contestant when necessary. Random
+uses only eligible IDs and reveals its selected row. The prospective player's own full
+ratings remain inspectable in both modes. `SurvivorNewSeasonSetup` retains selected_id,
+information_mode (Detailed/Immersive), trait_filter and gender_filter in memory across
+Home navigation. `validate(catalog)` is the Phase 4C acceptance boundary. Confirmation
+labels the result as retained selection for Phase 4C and explicitly creates no season
+or save. Phase 4C must validate the ID again before creating its configured ruleset,
+tribes and compatible save. No existing technical ruleset, save, server protocol or
+Supabase schema changes. The playable technical season has a separate **Technical
+Season Test** action under Credits & notices, followed by the existing empty-slot flow.
+
+`ratings_for(entry, is_player)` exposes only catalog ratings: Detailed permits opponent
+numbers, Immersive withholds opponent numbers; own ratings remain available.
+`impressions_for(entry)` exposes catalog trait/style and relative strongest/weakest
+Physical/Mental/Social categories without numbers (equal totals imply no relative weakness). Neither projection accepts or
+reveals actual alliances, conversations, idol locations or voting intentions. Information
+mode is presentation only and must never change simulation or NPC intelligence.
+
+The reusable `SurvivorCharacterPreview` owns one isolated SubViewport and at most one
+selected model. It frees the prior model synchronously, coalesces deferred synchronous
+loads with a generation token, finds idle clips without changing source animations,
+frames nested mesh bounds and supports mouse/touch yaw rotation. It disables rendering
+without a model and releases its viewport/input/children on exit. No threaded loading
+is assumed. Only an explicitly staged ID-bound model may be loaded. No approved actual
+contestant model was available in this workspace; all 18 use their own existing portrait
+with a clear 3D-unavailable label. No rejected model is reused as a contestant.
+
+Private build procedure (never public Actions): stage the reconciled catalog and
+optimized 512px portraits into an ignored dedicated build directory, then set
+`SURVIVOR_PRIVATE_CAST` to that directory and `SURVIVOR_PRIVATE_UI` to the approved
+Assets directory. The UI helper narrowly adds parch-portrait/parch-landscape to Phase
+4A's existing allowlist; image proportions/transparency are retained. Explicit optional
+`--approved-model-dir` accepts ID-named GLBs from authorized external staging only; it
+never searches reference repositories for models. Private catalog, portraits, font,
+artwork, screenshots and export pack remain outside public commits and public Actions
+artifacts. Public builds retain the licensed font/surface fallbacks and an unavailable
+catalog state, never a fictional replacement cast. Public tests use technical fixtures.
+The title environment is released on selection entry and rebuilt on Home return.
+
+Validation: source reconciliation passed for 18 unique IDs and 486 unchanged individual
+ratings, current campcraft, all existing styles/defaults and six contestants per trait.
+The focused Godot selection gate passed with private staging and with it removed;
+it covers every handoff, information projections, intersecting filters/random, missing
+previews, all portraits, a technical model's idle/rotation/framing, rapid replacement,
+resource teardown and repeated Home navigation. Web export is single-threaded.
+Landscape captures and the focused browser regression are linked from the draft PR,
+kept outside public artifacts. Physical iPhone Safari, live account/cloud mutation and
+production contestant models remain unverified; no native certification or complete
+performance benchmark was rerun for this presentation change.
