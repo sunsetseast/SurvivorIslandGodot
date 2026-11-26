@@ -257,8 +257,27 @@ def app_wait(page, expression):
 
 def app_tap(page, name):
     state = app_wait(page, f'Boolean(a.actions["{name}"])')
-    x, y = state["actions"][name]
-    page.touchscreen.tap(x * page.viewport_size["width"], y * page.viewport_size["height"])
+    # Credits is a scroll surface; the technical entry can be below the clipped
+    # viewport. Reveal it with real touch input instead of tapping offscreen.
+    for _ in range(12):
+        x, y = state["actions"][name]
+        if state["screen"] != "CREDITS" or .16 < y < .78:
+            assert 0 < x < 1 and 0 < y < 1, (name, state)
+            page.touchscreen.tap(x * page.viewport_size["width"], y * page.viewport_size["height"])
+            return
+        width, height = page.viewport_size.values()
+        begin, end = (.70, .30) if y >= .78 else (.30, .70)
+        cdp = page.context.new_cdp_session(page)
+        cdp.send("Input.dispatchTouchEvent", {"type":"touchStart", "touchPoints":[{"x":width * .5,"y":height * begin}]})
+        for step in range(1, 13):
+            cdp.send("Input.dispatchTouchEvent", {"type":"touchMove", "touchPoints":[
+                {"x":width * .5,"y":height * (begin + (end - begin) * step / 12)}]})
+            page.wait_for_timeout(30)
+        cdp.send("Input.dispatchTouchEvent", {"type":"touchEnd", "touchPoints":[]})
+        cdp.detach()
+        page.wait_for_timeout(400)
+        state = app_state(page)
+    raise AssertionError(("Could not reveal menu action", name, state))
 
 
 def resume_after_reload(page):

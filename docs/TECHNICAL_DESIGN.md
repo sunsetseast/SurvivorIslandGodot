@@ -453,3 +453,8 @@ portraits, models, fonts or other artwork. The server still runs the unchanged
 technical multiplayer ruleset. No hosted server deployment is part of this fix.
 Public synthetic compatibility fixtures run in the isolated simulation stage; private
 Phase 4C tests additionally exercise the exact shipped-preview migration pin.
+
+After the Docker gate passed, the previously unreachable Web regression exposed an
+older navigation assumption: its technical-season Credits button was below the
+visible scroll panel (normalized Y about 1.89). The browser helper now reveals Credits
+actions with touch swipes before tapping. Product UI and gameplay remain unchanged.
