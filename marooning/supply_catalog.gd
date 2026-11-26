@@ -19,9 +19,11 @@ static func definitions() -> Dictionary:
         ["basket", "Empty basket", "storage", 0, 4, "basket", 1, "float", ["storage"]],
         ["cup", "Metal cups", "cooking", 0, 3, "cup", 3, "sink", ["water"]],
         ["tools", "Hand tools", "tool", 1, 2, "kit", 1, "sink", ["campcraft"]]]
+    # Physical kg per instance, independent of the ordinal handling weight.
+    var masses := [20.5,.7,2.5,10.7,1.2,3.0,1.0,18.0,4.5,6.0,12.0,1.2,.6,.9,3.5]
     for row: Array in rows:
         result[row[0]] = {"id":row[0], "name":row[1], "category":row[2], "weight":row[3],
-            "count":row[4], "unit":row[5], "quantity":row[6], "buoyancy":row[7], "tags":row[8],
+            "mass_kg":masses[result.size()], "count":row[4], "unit":row[5], "quantity":row[6], "buoyancy":row[7], "tags":row[8],
             "speed":[.95,.8,.6,.5][row[3]], "pickup_duration":.65 + row[3] * .3,
             "loading_duration":.8 + row[3] * .25, "visual":"res://marooning/supply_visual.gd",
             "camp_inventory":row[0]}

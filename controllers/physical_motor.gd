@@ -17,6 +17,9 @@ const DIVE_MIN_DEPTH := 2.60
 const DIVE_SPEED := 1.85
 
 var movement_speed_multiplier := 1.0
+# Opt-in transient platform attachment; ordinary camp controllers leave these false.
+var raft_attached := false
+var locomotion_suspended := false
 var water: CampWaterSurface
 var locomotion := Locomotion.LAND
 var travel_heading := 0.0
@@ -51,6 +54,10 @@ func face_point(point: Vector3, delta: float, turn_rate := 9.0) -> void:
         set_heading(rotate_toward(travel_heading, atan2(heading.x, heading.z), turn_rate * delta))
 
 func walk_direction(desired: Vector3, running: bool, delta: float, _animate := true, dive_steer := 0.0) -> void:
+    if raft_attached or locomotion_suspended:
+        velocity = Vector3.ZERO
+        planar = Vector3.ZERO
+        return
     _update_water_state(desired)
     var speed := RUN_SPEED if running else WALK_SPEED
     var acceleration := 8.5

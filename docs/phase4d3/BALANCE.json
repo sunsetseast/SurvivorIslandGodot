@@ -1,0 +1,492 @@
+[
+  {
+    "cargo": 0.0,
+    "duration": 82.6666666666633,
+    "finished": true,
+    "human": "misses",
+    "perfect_fraction": 0.378980891719745,
+    "rafts": {
+      "t0": {
+        "arrival_time": 78.6166666666635,
+        "cargo_kg": 0.0,
+        "crew_seconds": 545.699999999832,
+        "max_speed": 3.62300226935892,
+        "paddler_seconds": 545.699999999832,
+        "peak_mass_kg": 855.0
+      },
+      "t1": {
+        "arrival_time": 74.8833333333304,
+        "cargo_kg": 8.0,
+        "crew_seconds": 512.099999999863,
+        "max_speed": 3.72376976788867,
+        "paddler_seconds": 512.099999999863,
+        "peak_mass_kg": 863.0
+      }
+    },
+    "reward": "t1",
+    "seed": 42,
+    "strength": 5.0,
+    "swimmer_at": -1.0,
+    "swimmers": 18,
+    "tribes": 2
+  },
+  {
+    "cargo": 160.0,
+    "duration": 85.2499999999964,
+    "finished": true,
+    "human": "misses",
+    "perfect_fraction": 0.376722817764165,
+    "rafts": {
+      "t0": {
+        "arrival_time": 81.18333333333,
+        "cargo_kg": 160.0,
+        "crew_seconds": 568.799999999811,
+        "max_speed": 3.45657892194145,
+        "paddler_seconds": 568.799999999811,
+        "peak_mass_kg": 1015.0
+      },
+      "t1": {
+        "arrival_time": 77.1666666666636,
+        "cargo_kg": 168.0,
+        "crew_seconds": 532.649999999844,
+        "max_speed": 3.5441874384036,
+        "paddler_seconds": 532.649999999844,
+        "peak_mass_kg": 1023.0
+      }
+    },
+    "reward": "t1",
+    "seed": 42,
+    "strength": 5.0,
+    "swimmer_at": -1.0,
+    "swimmers": 18,
+    "tribes": 2
+  },
+  {
+    "cargo": 160.0,
+    "duration": 80.4833333333301,
+    "finished": true,
+    "human": "perfect",
+    "perfect_fraction": 0.412912912912913,
+    "rafts": {
+      "t0": {
+        "arrival_time": 76.4333333333303,
+        "cargo_kg": 168.0,
+        "crew_seconds": 526.04999999985,
+        "max_speed": 3.72814138651723,
+        "paddler_seconds": 526.04999999985,
+        "peak_mass_kg": 1023.0
+      },
+      "t1": {
+        "arrival_time": 77.0666666666636,
+        "cargo_kg": 160.0,
+        "crew_seconds": 531.749999999845,
+        "max_speed": 3.5441874384036,
+        "paddler_seconds": 531.749999999845,
+        "peak_mass_kg": 1015.0
+      }
+    },
+    "reward": "t0",
+    "seed": 42,
+    "strength": 5.0,
+    "swimmer_at": -1.0,
+    "swimmers": 18,
+    "tribes": 2
+  },
+  {
+    "cargo": 160.0,
+    "duration": 72.6666666666638,
+    "finished": true,
+    "human": "perfect",
+    "perfect_fraction": 0.416666666666667,
+    "rafts": {
+      "t0": {
+        "arrival_time": 68.6333333333307,
+        "cargo_kg": 168.0,
+        "crew_seconds": 455.849999999914,
+        "max_speed": 4.35732573805983,
+        "paddler_seconds": 455.849999999914,
+        "peak_mass_kg": 1023.0
+      },
+      "t1": {
+        "arrival_time": 69.2999999999974,
+        "cargo_kg": 160.0,
+        "crew_seconds": 461.849999999909,
+        "max_speed": 4.14853523842515,
+        "paddler_seconds": 461.849999999909,
+        "peak_mass_kg": 1015.0
+      }
+    },
+    "reward": "t0",
+    "seed": 42,
+    "strength": 9.0,
+    "swimmer_at": -1.0,
+    "swimmers": 18,
+    "tribes": 2
+  },
+  {
+    "cargo": 160.0,
+    "duration": 94.9666666666626,
+    "finished": true,
+    "human": "misses",
+    "perfect_fraction": 0.376158940397351,
+    "rafts": {
+      "t0": {
+        "arrival_time": 90.8833333333295,
+        "cargo_kg": 160.0,
+        "crew_seconds": 656.099999999732,
+        "max_speed": 2.96397059721861,
+        "paddler_seconds": 656.099999999732,
+        "peak_mass_kg": 1015.0
+      },
+      "t1": {
+        "arrival_time": 86.1999999999964,
+        "cargo_kg": 168.0,
+        "crew_seconds": 613.94999999977,
+        "max_speed": 3.02484784638716,
+        "paddler_seconds": 613.94999999977,
+        "peak_mass_kg": 1023.0
+      }
+    },
+    "reward": "t1",
+    "seed": 42,
+    "strength": 2.0,
+    "swimmer_at": -1.0,
+    "swimmers": 18,
+    "tribes": 2
+  },
+  {
+    "cargo": 160.0,
+    "duration": 100.899999999996,
+    "finished": true,
+    "human": "perfect",
+    "perfect_fraction": 0.388036809815951,
+    "rafts": {
+      "t0": {
+        "arrival_time": 79.4333333333301,
+        "cargo_kg": 160.0,
+        "crew_seconds": 503.633333333204,
+        "max_speed": 3.38629326691141,
+        "paddler_seconds": 503.633333333204,
+        "peak_mass_kg": 1015.0
+      },
+      "t1": {
+        "arrival_time": 76.7833333333303,
+        "cargo_kg": 168.0,
+        "crew_seconds": 529.199999999847,
+        "max_speed": 3.65473165331134,
+        "paddler_seconds": 529.199999999847,
+        "peak_mass_kg": 1023.0
+      }
+    },
+    "reward": "t1",
+    "seed": 42,
+    "strength": 5.0,
+    "swimmer_at": 30.0,
+    "swimmers": 18,
+    "tribes": 2
+  },
+  {
+    "cargo": 160.0,
+    "duration": 82.0499999999966,
+    "finished": true,
+    "human": "perfect",
+    "perfect_fraction": 0.406676783004552,
+    "rafts": {
+      "t0": {
+        "arrival_time": 76.8833333333303,
+        "cargo_kg": 168.0,
+        "crew_seconds": 518.233333333191,
+        "max_speed": 3.72814138651723,
+        "paddler_seconds": 518.233333333191,
+        "peak_mass_kg": 1023.0
+      },
+      "t1": {
+        "arrival_time": 77.1666666666636,
+        "cargo_kg": 160.0,
+        "crew_seconds": 532.649999999844,
+        "max_speed": 3.5441874384036,
+        "paddler_seconds": 532.649999999844,
+        "peak_mass_kg": 1015.0
+      }
+    },
+    "reward": "t0",
+    "seed": 42,
+    "strength": 5.0,
+    "swimmer_at": 65.0,
+    "swimmers": 18,
+    "tribes": 2
+  },
+  {
+    "cargo": 0.0,
+    "duration": 93.1166666666627,
+    "finished": true,
+    "human": "misses",
+    "perfect_fraction": 0.375857338820302,
+    "rafts": {
+      "t0": {
+        "arrival_time": 90.1333333333295,
+        "cargo_kg": 0.0,
+        "crew_seconds": 432.899999999935,
+        "max_speed": 3.06217299512981,
+        "paddler_seconds": 432.899999999935,
+        "peak_mass_kg": 630.0
+      },
+      "t1": {
+        "arrival_time": 83.9666666666632,
+        "cargo_kg": 8.0,
+        "crew_seconds": 395.899999999969,
+        "max_speed": 3.32569749165759,
+        "paddler_seconds": 395.899999999969,
+        "peak_mass_kg": 638.0
+      },
+      "t2": {
+        "arrival_time": 85.4999999999964,
+        "cargo_kg": 0.0,
+        "crew_seconds": 405.09999999996,
+        "max_speed": 3.19841171123906,
+        "paddler_seconds": 405.09999999996,
+        "peak_mass_kg": 630.0
+      }
+    },
+    "reward": "t1",
+    "seed": 42,
+    "strength": 5.0,
+    "swimmer_at": -1.0,
+    "swimmers": 18,
+    "tribes": 3
+  },
+  {
+    "cargo": 160.0,
+    "duration": 96.6499999999958,
+    "finished": true,
+    "human": "misses",
+    "perfect_fraction": 0.370565045992116,
+    "rafts": {
+      "t0": {
+        "arrival_time": 93.6666666666626,
+        "cargo_kg": 160.0,
+        "crew_seconds": 454.099999999916,
+        "max_speed": 2.89094794510064,
+        "paddler_seconds": 454.099999999916,
+        "peak_mass_kg": 790.0
+      },
+      "t1": {
+        "arrival_time": 87.016666666663,
+        "cargo_kg": 168.0,
+        "crew_seconds": 414.199999999952,
+        "max_speed": 3.13887110899783,
+        "paddler_seconds": 414.199999999952,
+        "peak_mass_kg": 798.0
+      },
+      "t2": {
+        "arrival_time": 88.5833333333296,
+        "cargo_kg": 160.0,
+        "crew_seconds": 423.599999999943,
+        "max_speed": 3.01735448886765,
+        "paddler_seconds": 423.599999999943,
+        "peak_mass_kg": 790.0
+      }
+    },
+    "reward": "t1",
+    "seed": 42,
+    "strength": 5.0,
+    "swimmer_at": -1.0,
+    "swimmers": 18,
+    "tribes": 3
+  },
+  {
+    "cargo": 160.0,
+    "duration": 87.8833333333296,
+    "finished": true,
+    "human": "perfect",
+    "perfect_fraction": 0.412144702842377,
+    "rafts": {
+      "t0": {
+        "arrival_time": 84.9333333333298,
+        "cargo_kg": 168.0,
+        "crew_seconds": 401.699999999963,
+        "max_speed": 3.2439397970016,
+        "paddler_seconds": 401.699999999963,
+        "peak_mass_kg": 798.0
+      },
+      "t1": {
+        "arrival_time": 86.666666666663,
+        "cargo_kg": 160.0,
+        "crew_seconds": 412.099999999954,
+        "max_speed": 3.13887110899783,
+        "paddler_seconds": 412.099999999954,
+        "peak_mass_kg": 790.0
+      },
+      "t2": {
+        "arrival_time": -1.0,
+        "cargo_kg": 160.0,
+        "crew_seconds": 419.399999999947,
+        "max_speed": 3.01735448886765,
+        "paddler_seconds": 419.399999999947,
+        "peak_mass_kg": 790.0
+      }
+    },
+    "reward": "t0",
+    "seed": 42,
+    "strength": 5.0,
+    "swimmer_at": -1.0,
+    "swimmers": 12,
+    "tribes": 3
+  },
+  {
+    "cargo": 160.0,
+    "duration": 78.9166666666635,
+    "finished": true,
+    "human": "perfect",
+    "perfect_fraction": 0.412202380952381,
+    "rafts": {
+      "t0": {
+        "arrival_time": 75.9666666666636,
+        "cargo_kg": 168.0,
+        "crew_seconds": 347.900000000012,
+        "max_speed": 3.79142591866604,
+        "paddler_seconds": 347.900000000012,
+        "peak_mass_kg": 798.0
+      },
+      "t1": {
+        "arrival_time": 77.5833333333302,
+        "cargo_kg": 160.0,
+        "crew_seconds": 357.600000000003,
+        "max_speed": 3.67086383439836,
+        "paddler_seconds": 357.600000000003,
+        "peak_mass_kg": 790.0
+      },
+      "t2": {
+        "arrival_time": -1.0,
+        "cargo_kg": 160.0,
+        "crew_seconds": 365.599999999996,
+        "max_speed": 3.52795514167348,
+        "paddler_seconds": 365.599999999996,
+        "peak_mass_kg": 790.0
+      }
+    },
+    "reward": "t0",
+    "seed": 42,
+    "strength": 9.0,
+    "swimmer_at": -1.0,
+    "swimmers": 12,
+    "tribes": 3
+  },
+  {
+    "cargo": 160.0,
+    "duration": 108.316666666662,
+    "finished": true,
+    "human": "misses",
+    "perfect_fraction": 0.366628830874007,
+    "rafts": {
+      "t0": {
+        "arrival_time": 105.316666666662,
+        "cargo_kg": 160.0,
+        "crew_seconds": 523.999999999852,
+        "max_speed": 2.47346946361455,
+        "paddler_seconds": 523.999999999852,
+        "peak_mass_kg": 790.0
+      },
+      "t1": {
+        "arrival_time": 97.4666666666624,
+        "cargo_kg": 168.0,
+        "crew_seconds": 476.899999999895,
+        "max_speed": 2.68852753684145,
+        "paddler_seconds": 476.899999999895,
+        "peak_mass_kg": 798.0
+      },
+      "t2": {
+        "arrival_time": 99.633333333329,
+        "cargo_kg": 160.0,
+        "crew_seconds": 489.899999999883,
+        "max_speed": 2.59548982724327,
+        "paddler_seconds": 489.899999999883,
+        "peak_mass_kg": 790.0
+      }
+    },
+    "reward": "t1",
+    "seed": 42,
+    "strength": 2.0,
+    "swimmer_at": -1.0,
+    "swimmers": 18,
+    "tribes": 3
+  },
+  {
+    "cargo": 160.0,
+    "duration": 102.516666666662,
+    "finished": true,
+    "human": "perfect",
+    "perfect_fraction": 0.380263157894737,
+    "rafts": {
+      "t0": {
+        "arrival_time": 91.1666666666628,
+        "cargo_kg": 160.0,
+        "crew_seconds": 377.949999999985,
+        "max_speed": 2.97636957463828,
+        "paddler_seconds": 377.949999999985,
+        "peak_mass_kg": 790.0
+      },
+      "t1": {
+        "arrival_time": 86.6833333333297,
+        "cargo_kg": 168.0,
+        "crew_seconds": 412.199999999954,
+        "max_speed": 3.2224473310462,
+        "paddler_seconds": 412.199999999954,
+        "peak_mass_kg": 798.0
+      },
+      "t2": {
+        "arrival_time": 87.9499999999963,
+        "cargo_kg": 160.0,
+        "crew_seconds": 419.799999999947,
+        "max_speed": 3.11211368172324,
+        "paddler_seconds": 419.799999999947,
+        "peak_mass_kg": 790.0
+      }
+    },
+    "reward": "t1",
+    "seed": 42,
+    "strength": 5.0,
+    "swimmer_at": 30.0,
+    "swimmers": 18,
+    "tribes": 3
+  },
+  {
+    "cargo": 160.0,
+    "duration": 90.7333333333295,
+    "finished": true,
+    "human": "perfect",
+    "perfect_fraction": 0.396618985695709,
+    "rafts": {
+      "t0": {
+        "arrival_time": 86.3666666666631,
+        "cargo_kg": 168.0,
+        "crew_seconds": 388.949999999975,
+        "max_speed": 3.2439397970016,
+        "paddler_seconds": 388.949999999975,
+        "peak_mass_kg": 798.0
+      },
+      "t1": {
+        "arrival_time": 86.5333333333297,
+        "cargo_kg": 160.0,
+        "crew_seconds": 411.299999999955,
+        "max_speed": 3.13887110899783,
+        "paddler_seconds": 411.299999999955,
+        "peak_mass_kg": 790.0
+      },
+      "t2": {
+        "arrival_time": 88.8833333333296,
+        "cargo_kg": 160.0,
+        "crew_seconds": 425.399999999942,
+        "max_speed": 3.01371166728028,
+        "paddler_seconds": 425.399999999942,
+        "peak_mass_kg": 790.0
+      }
+    },
+    "reward": "t0",
+    "seed": 42,
+    "strength": 5.0,
+    "swimmer_at": 65.0,
+    "swimmers": 18,
+    "tribes": 3
+  }
+]

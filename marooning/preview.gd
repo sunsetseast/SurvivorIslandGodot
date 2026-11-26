@@ -17,9 +17,11 @@ var skip: Button
 var elapsed := 0.0
 var introducing := true
 var shots: Array[Dictionary] = []
+var intro_tween: Tween
 var actions: Dictionary = {}
 var old_max_steps := 8
 var scramble: MarooningScrambleAdapter
+var race: MarooningRaceAdapter
 var _capture_callback: JavaScriptObject
 var _frame_usec: int = 0
 var frame_intervals: Array[float] = []
@@ -44,6 +46,9 @@ func _ready() -> void:
     scramble = MarooningScrambleAdapter.new()
     scramble.preview = self
     add_child(scramble)
+    race = MarooningRaceAdapter.new()
+    race.preview = self
+    add_child(race)
     shots = [
         {"eye":Vector3(42, 29, 48), "target":Vector3(0, 9, 0), "text":"Welcome aboard. Eighteen castaways, one new adventure."},
         {"eye":Vector3(8, 12, 15), "target":Vector3(0, layout.deck_y + 1, 0), "text":"Take a look around. These are the people who will share your journey."},
@@ -85,6 +90,7 @@ func _cast() -> void:
                 actor = CampHumanoidMotor.new()
                 actor.collision_layer = 4
                 actor.collision_mask = 1
+                actor.water_motion = load("res://world/assets/surface-swimming.res")
                 actor.floor_block_on_wall = false
                 actor.position = point
                 add_child(actor)
@@ -159,7 +165,8 @@ func _process(delta: float) -> void:
             frame_intervals.pop_front()
     _frame_usec = now
     if player.position.y < -20 or absf(player.position.x) > 200 or absf(player.position.z) > 205:
-        reset_deck()
+        if not race.started:
+            reset_deck()
     if not introducing:
         return
     elapsed += delta
@@ -178,9 +185,9 @@ func finish_intro() -> void:
     introducing = false
     touch.cancel()
     # Blend the last shot into the existing orbit camera before unlocking input.
-    var tween := create_tween()
-    tween.tween_property(cinematic, "global_transform", player.camera.global_transform, .65)
-    tween.finished.connect(func() -> void:
+    intro_tween = create_tween()
+    intro_tween.tween_property(cinematic, "global_transform", player.camera.global_transform, .65)
+    intro_tween.finished.connect(func() -> void:
         if not is_inside_tree():
             return
         player.camera.current = true
@@ -210,10 +217,18 @@ func inspect_dock() -> void:
 func _notification(what: int) -> void:
     if what in [NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_WM_WINDOW_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED] and is_instance_valid(touch):
         touch.cancel()
+        for actor: CampPhysicalMotor in cast.values():
+            actor.locomotion_suspended = true
+        if is_instance_valid(race):
+            race.simulation.suspended = true
         if is_instance_valid(scramble):
             scramble.simulation.suspended = true
     if what in [NOTIFICATION_APPLICATION_FOCUS_IN, NOTIFICATION_WM_WINDOW_FOCUS_IN, NOTIFICATION_APPLICATION_RESUMED] and is_instance_valid(scramble):
         scramble.simulation.suspended = false
+        for actor: CampPhysicalMotor in cast.values():
+            actor.locomotion_suspended = false
+        if is_instance_valid(race):
+            race.simulation.suspended = false
 
 func _exit() -> void:
     touch.cancel()
@@ -221,6 +236,8 @@ func _exit() -> void:
     exited.emit()
 
 func _exit_tree() -> void:
+    if intro_tween != null and intro_tween.is_valid():
+        intro_tween.kill()
     Engine.max_physics_steps_per_frame = old_max_steps
     if _capture_callback != null:
         JavaScriptBridge.get_interface("window").marooningView = null
@@ -240,13 +257,22 @@ func review_state() -> Dictionary:
             if control.visible:
                 var center := control.get_global_rect().get_center() / size
                 controls[key] = [center.x,center.y]
+    if is_instance_valid(scramble) and scramble.steal_button.is_visible_in_tree():
+        var center := scramble.steal_button.get_global_rect().get_center() / size
+        controls["steal"] = [center.x,center.y]
+    if is_instance_valid(race) and race.started:
+        for key: String in {"board":race.board,"paddle":race.paddle,"rest":race.rest,"jump_off":race.jump,"claim_reward":race.claim_button}:
+            var control: Button = {"board":race.board,"paddle":race.paddle,"rest":race.rest,"jump_off":race.jump,"claim_reward":race.claim_button}[key]
+            if control.is_visible_in_tree():
+                var center := control.get_global_rect().get_center() / size
+                controls[key] = [center.x,center.y]
     var stick := touch.home() / size
     controls["stick"] = [stick.x, stick.y]
     return {"actors":cast.size(), "selected":configuration.selected, "tribes":configuration.tribes.size(),
         "intro":introducing, "locked":player.locked, "x":player.position.x, "y":player.position.y,
         "z":player.position.z, "yaw":player.yaw, "travel":player.travel_distance,
         "move_finger":touch.move_finger, "look_finger":touch.look_finger,
-        "controls":controls, "frame_intervals_ms":frame_intervals, "scramble_phase":scramble.simulation.phase, "scramble_elapsed":scramble.simulation.elapsed, "events":scramble.simulation.events.size()}
+        "controls":controls, "frame_intervals_ms":frame_intervals, "scramble_phase":scramble.simulation.phase, "scramble_elapsed":scramble.simulation.elapsed, "events":scramble.simulation.events.size(),"race_phase":race.simulation.phase,"race_elapsed":race.simulation.elapsed,"reward":race.simulation.reward.tribe,"aboard":race.simulation.actors[int(configuration.selected)].raft,"boarding_position":[race.simulation.boarding_point(race.simulation.actors[int(configuration.selected)].tribe).x,race.simulation.boarding_point(race.simulation.actors[int(configuration.selected)].tribe).z]}
 
 func _capture(arguments: Array) -> void:
     if arguments.is_empty():
@@ -258,7 +284,13 @@ func _capture(arguments: Array) -> void:
         "dock":[Vector3(86, 5, 28), layout.reward],
         "landing":[Vector3(-18, 7, 154), Vector3(0, 3, 189)]}
     var id := String(arguments[0])
-    if id == "follow":
+    if id in ["raft-side","raft-overhead","race"] and is_instance_valid(race):
+        var tribe: String = race.simulation.actors[int(configuration.selected)].tribe
+        var target: Vector3 = race.vessels[tribe].position
+        cinematic.position = target + (Vector3(0,18,0.01) if id == "raft-overhead" else Vector3(12,5,9))
+        cinematic.look_at(target)
+        cinematic.current = true
+    elif id == "follow":
         player.camera.current = true
     elif views.has(id):
         cinematic.position = views[id][0]
@@ -266,6 +298,13 @@ func _capture(arguments: Array) -> void:
         cinematic.current = true
 
 func restart_scramble() -> void:
+    if intro_tween != null and intro_tween.is_valid():
+        intro_tween.kill()
+    for key: String in ["scramble_result","marooning_result"]:
+        if has_meta(key):
+            remove_meta(key)
+    frame_intervals.clear()
+    _frame_usec = 0
     Engine.max_physics_steps_per_frame = old_max_steps
     touch.cancel()
     for child in get_children():

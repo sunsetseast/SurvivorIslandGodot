@@ -6,7 +6,7 @@ func check(value: bool, message: String) -> void:
     if not value:
         failures += 1
         printerr("FAIL: ", message)
-func fixture() -> SurvivorContestantCatalog:
+static func fixture() -> SurvivorContestantCatalog:
     var entries: Array = []
     for index in 18:
         var attributes := {}
@@ -119,12 +119,12 @@ func run() -> void:
         var participants := {}
         var deliveries := {}
         for event: Dictionary in sim.events:
-            if event.action == "pickup" and event.outcome == "success":
+            if event.action in ["pickup","steal"] and event.outcome == "success":
                 participants[event.actor] = true
             if event.action == "load" and event.outcome == "success":
                 deliveries[event.tribe] = int(deliveries.get(event.tribe,0)) + 1
         print("Scramble pickups: ",participants.keys()," deliveries: ",deliveries)
-        check(participants.size() == 17, "All 17 NPCs physically collect")
+        check(participants.size() == 17, "All 17 NPCs physically obtain supplies")
         check(deliveries.size() == count_value, "Every tribe physically delivers")
         check(preview.configuration == original, "Configuration remains transient and unchanged")
         var reference: WeakRef = weakref(preview)

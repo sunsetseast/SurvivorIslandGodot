@@ -3,10 +3,10 @@ extends Resource
 ## Distances in metres; route IDs and semantic markers are Phase 4D.2 contracts.
 @export var ship_origin := Vector3(0, -1.5, 0)
 @export var deck_y := 1.9
-@export var reward := Vector3(76, .5, 20)
+@export var reward := Vector3(0, .5, 115)
 @export var landing := Vector3(0, .5, 178)
 @export var reward_id := "fishing-equipment-preview"
-@export var raft_mounts: Array[Vector3] = [Vector3(-9, .55, -8), Vector3(9, .55, -8), Vector3(9, .55, 5)]
+@export var raft_mounts: Array[Vector3] = [Vector3(-12, .55, -8), Vector3(12, .55, -8), Vector3(22, .55, -6.6)]
 @export var rival_exits: Array[Vector3] = [Vector3(-180, 0, 100), Vector3(180, 0, 100)]
 
 func bed(_x: float, z: float) -> float:

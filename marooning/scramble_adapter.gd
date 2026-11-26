@@ -12,11 +12,14 @@ var brain_index := 0
 var hud: Label
 var action_button: Button
 var drop_button: Button
+var steal_button: Button
+var steal_target := ""
 var start_button: Button
 var restart_button: Button
 var contextual := ""
 var nearest := ""
 var finished := false
+var last_feedback := -1.0
 var stalled: Dictionary = {}
 var last_positions: Dictionary = {}
 var rejected: Dictionary = {}
@@ -69,10 +72,12 @@ func _ready() -> void:
     start_button = button(panel,"Start Supply Scramble · 120s",start)
     action_button = button(panel,"Pick Up",interact)
     drop_button = button(panel,"Drop",drop)
+    steal_button = button(panel,"Steal",steal)
     restart_button = button(panel,"Restart preview",restart)
     restart_button.hide()
     action_button.hide()
     drop_button.hide()
+    steal_button.hide()
 
 func button(parent: Node, text: String, action: Callable) -> Button:
     var control := Button.new()
@@ -87,17 +92,17 @@ func start() -> void:
     simulation.ready()
     simulation.start()
     start_button.hide()
-    preview.subtitle.text = "Gather supplies for your tribe! Carry one item; load at your tribe’s rail station.\nThrow at either bow opening. Floating cargo is unsecured."
+    preview.subtitle.text = "Gather supplies for your tribe! Carry one item; load at your tribe’s rail station.\nDrop to change cargo. Only loaded supplies count."
 
 func restart() -> void:
     preview.call_deferred("restart_scramble")
 
 func accessible(actor: int, action: String, id: String) -> bool:
-    if action != "pickup":
+    if action not in ["pickup","steal"]:
         return true
     var body: Node3D = preview.cast[actor]
     var from := body.global_position + Vector3.UP * .5
-    var to: Vector3 = simulation.items[id].position + Vector3.UP * .3
+    var to: Vector3 = (simulation.actors[simulation.items[id].actor].position if action == "steal" else simulation.items[id].position) + Vector3.UP * .3
     var query := PhysicsRayQueryParameters3D.create(from,to,1)
     return preview.get_world_3d().direct_space_state.intersect_ray(query).is_empty()
 
@@ -130,17 +135,13 @@ func _physics_process(delta: float) -> void:
         finished = true
         action_button.hide()
         drop_button.hide()
-        restart_button.show()
-        preview.player.locked = true
-        preview.touch.cancel()
-        var result := simulation.result(preview.routes)
-        preview.set_meta("scramble_result",result)
-        var text := "SCRAMBLE COMPLETE · Secured cargo\n"
-        for tribe: Dictionary in preview.configuration.tribes:
-            text += "%s: %d   " % [tribe.name,result.secured[tribe.id].size()]
-        preview.subtitle.text = text + "\nUnsecured: %d · Preview only; ocean recovery comes next." % result.unsecured.size()
-    update_visuals(delta)
-    update_hud()
+        hud.hide()
+        steal_button.hide()
+        preview.set_meta("scramble_result",simulation.result(preview.routes))
+        preview.race.begin()
+    if not finished:
+        update_visuals(delta)
+        update_hud()
 
 func decide(id: int) -> void:
     if simulation.pending.has(id):
@@ -160,6 +161,12 @@ func decide(id: int) -> void:
         if simulation.valid(id,"pickup",target):
             simulation.request(id,"pickup",target,accessible(id,"pickup",target))
             return
+    # Theft is rare and personality/value gated; collection remains predominant.
+    if simulation.rating(id,"risk") + simulation.rating(id,"aggression") > 14:
+        for item: Dictionary in simulation.items.values():
+            if item.state == MarooningScramble.State.CARRIED and simulation.valid(id,"steal",item.id) and simulation.definitions[item.type].category in ["tool","food"]:
+                if simulation.request(id,"steal",item.id,accessible(id,"steal",item.id)):
+                    return
     if last_positions.has(id) and actor.position.distance_to(last_positions[id]) < .15 and targets.has(id):
         stalled[id] = int(stalled.get(id,0)) + 1
         if stalled[id] > 12:
@@ -254,6 +261,19 @@ func update_hud() -> void:
     hud.text = "%03d s · %s · Secured %d\n%s" % [ceili(simulation.duration-simulation.elapsed),tribe,secured,"Hands free" if held.is_empty() else simulation.definitions[simulation.items[held].type].name]
     if simulation.phase != MarooningScramble.Phase.SCRAMBLE_ACTIVE:
         return
+    for event: Dictionary in simulation.events:
+        if event.actor == id and float(event.elapsed) > last_feedback:
+            preview.subtitle.text = "%s · %s · %s" % [String(event.action).capitalize(),simulation.definitions[event.type].name,event.outcome]
+            last_feedback = event.elapsed
+    steal_target = ""
+    if held.is_empty():
+        for item: Dictionary in simulation.items.values():
+            if item.state == MarooningScramble.State.CARRIED and simulation.valid(id,"steal",item.id) and accessible(id,"steal",item.id):
+                steal_target = item.id
+                break
+    steal_button.visible = not steal_target.is_empty()
+    steal_button.disabled = simulation.pending.has(id) or float(simulation.cooldowns.get(id,0)) > simulation.elapsed
+    steal_button.text = "Steal " + (simulation.definitions[simulation.items[steal_target].type].name if not steal_target.is_empty() else "")
     nearest = ""
     contextual = ""
     if held.is_empty():
@@ -269,16 +289,28 @@ func update_hud() -> void:
         nearest = held
         if simulation.valid(id,"load",held):
             contextual = "load"
-        elif simulation.valid(id,"throw",held):
-            contextual = "throw"
+
+    if held.is_empty() and contextual.is_empty():
+        for item: Dictionary in simulation.items.values():
+            if item.state == MarooningScramble.State.CARRIED and simulation.valid(id,"steal",item.id) and accessible(id,"steal",item.id):
+                nearest = item.id
+                contextual = "steal"
+                break
     action_button.visible = not contextual.is_empty()
-    action_button.text = {"pickup":"Pick Up", "load":"Load Raft", "throw":"Throw Overboard"}.get(contextual,"")
+    action_button.text = {"pickup":"Pick Up ","load":"Load Raft · ","steal":"Steal "}.get(contextual,"") + (simulation.definitions[simulation.items[nearest].type].name if not nearest.is_empty() else "")
     action_button.disabled = simulation.pending.has(id)
     drop_button.visible = not held.is_empty()
 
 func interact() -> void:
     if not nearest.is_empty() and not contextual.is_empty():
-        simulation.request(int(preview.configuration.selected),contextual,nearest,accessible(int(preview.configuration.selected),contextual,nearest))
+        var accepted := simulation.request(int(preview.configuration.selected),contextual,nearest,accessible(int(preview.configuration.selected),contextual,nearest))
+        preview.subtitle.text = "Working… ownership and access checked at completion" if accepted else "Unavailable or contested · move closer or wait"
 func drop() -> void:
     var id := int(preview.configuration.selected)
     simulation.request(id,"drop",simulation.carried(id))
+
+func steal() -> void:
+    if not steal_target.is_empty():
+        var id := int(preview.configuration.selected)
+        var accepted := simulation.request(id,"steal",steal_target,accessible(id,"steal",steal_target))
+        preview.subtitle.text = "Theft attempted · stay close until completion" if accepted else "Theft unavailable · move closer or wait"

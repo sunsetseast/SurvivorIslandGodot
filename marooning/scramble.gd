@@ -18,14 +18,18 @@ var pending: Dictionary = {}
 var events: Array[Dictionary] = []
 var suspended := false
 var seed_value := 1
+var rng := RandomNumberGenerator.new()
+var cooldowns: Dictionary = {}
+var contributions: Dictionary = {}
 
 func configure(config: Dictionary, roster: Dictionary, anchors: Array[Vector3], loading: Dictionary, access: Array[Vector3]) -> void:
     configuration = config.duplicate(true)
     seed_value = int(config.get("seed", 1))
     actors = roster.duplicate(true)
+    for actor: int in actors:
+        contributions[actor] = {}
     stations = loading.duplicate(true)
     openings = access.duplicate()
-    var rng := RandomNumberGenerator.new()
     rng.seed = seed_value
     var slots := anchors.duplicate()
     # Fisher-Yates; global RNG and rendering never influence cargo placement.
@@ -64,16 +68,25 @@ func rating(actor: int, key: String) -> float:
 func request(actor: int, action: String, id: String, accessible := true) -> bool:
     if phase != Phase.SCRAMBLE_ACTIVE or suspended or pending.has(actor) or not actors.has(actor) or not items.has(id) or not accessible:
         return false
+    if action == "throw" or float(cooldowns.get(actor, 0)) > elapsed:
+        return false
     if not valid(actor, action, id):
         return false
     var definition: Dictionary = definitions[items[id].type]
-    var seconds: float = definition.loading_duration if action == "load" else definition.pickup_duration
+    var seconds: float = 1.25 if action == "steal" else (definition.loading_duration if action == "load" else definition.pickup_duration)
     pending[actor] = {"action":action,"item":id,"at":elapsed + seconds * clampf(1.15 - rating(actor,"dexterity") * .03,.8,1.12)}
+    pending[actor]["victim"] = int(items[id].actor) if action == "steal" else 0
+    if action == "steal":
+        cooldowns[actor] = elapsed + 5
+        record(actor,id,action,"attempted",int(items[id].actor))
     return true
 
 func valid(actor: int, action: String, id: String) -> bool:
     var item: Dictionary = items[id]
     var point: Vector3 = actors[actor].position
+    if action == "steal":
+        var victim := int(item.actor)
+        return carried(actor).is_empty() and item.state == State.CARRIED and victim != actor and actors.has(victim) and point.distance_to(actors[victim].position) <= 1.35 and float(cooldowns.get(victim,0)) <= elapsed
     if action == "pickup":
         return carried(actor).is_empty() and item.state in [State.ABOARD,State.DROPPED] and point.distance_to(item.position) <= 1.35
     if item.state != State.CARRIED or item.actor != actor:
@@ -82,10 +95,6 @@ func valid(actor: int, action: String, id: String) -> bool:
         return true
     if action == "load":
         return point.distance_to(stations[actors[actor].tribe]) <= 1.45
-    if action == "throw":
-        for opening: Vector3 in openings:
-            if point.distance_to(opening) <= 1.3:
-                return true
     return false
 
 func advance(delta: float, access_check: Callable = Callable()) -> void:
@@ -105,12 +114,23 @@ func advance(delta: float, access_check: Callable = Callable()) -> void:
         var allowed := valid(actor,action,id)
         if access_check.is_valid():
             allowed = allowed and access_check.call(actor,action,id)
+        var victim := int(command.get("victim",0))
+        if action == "steal":
+            allowed = allowed and items[id].actor == victim
+            if allowed:
+                var chance := clampf(.5 + (rating(actor,"dexterity") + rating(actor,"deception") - rating(victim,"awareness") - rating(victim,"dexterity")) * .035,.15,.85)
+                allowed = rng.randf() < chance
+            cooldowns[actor] = elapsed + 5
+            if allowed:
+                cooldowns[victim] = elapsed + 4
         if allowed:
             var item: Dictionary = items[id]
             item.position = actors[actor].position
             match action:
                 "pickup":
                     item.state = State.CARRIED
+                    item.actor = actor
+                "steal":
                     item.actor = actor
                 "drop":
                     item.state = State.DROPPED
@@ -119,16 +139,8 @@ func advance(delta: float, access_check: Callable = Callable()) -> void:
                     item.state = State.SECURED
                     item.tribe = actors[actor].tribe
                     item.actor = 0
-                "throw":
-                    item.state = State.FLOATING
-                    item.actor = 0
-                    var opening: Vector3 = openings[0]
-                    for candidate: Vector3 in openings:
-                        if candidate.distance_to(item.position) < opening.distance_to(item.position):
-                            opening = candidate
-                    item.position = Vector3(signf(opening.x) * (7.0 + items.keys().find(id) * .04), .15, opening.z)
             items[id] = item
-        record(actor,id,action,"success" if allowed else "invalidated")
+        record(actor,id,action,"success" if allowed else "failed",victim)
         pending.erase(actor)
     if elapsed >= duration:
         for actor: int in pending:
@@ -136,12 +148,16 @@ func advance(delta: float, access_check: Callable = Callable()) -> void:
         pending.clear()
         phase = Phase.SCRAMBLE_COMPLETE
 
-func record(actor: int, id: String, action: String, outcome: String) -> void:
+func record(actor: int, id: String, action: String, outcome: String, victim := 0) -> void:
+    var key := action + "_" + outcome
+    contributions[actor][key] = int(contributions[actor].get(key,0)) + 1
     var witnesses: Array[int] = []
     for other: int in actors:
         if other != actor and actors[other].position.distance_to(actors[actor].position) < 6:
             witnesses.append(other)
     events.append({"tick":tick,"elapsed":elapsed,"actor":actor,"tribe":actors[actor].tribe,
+        "victim":victim,"victim_tribe":actors[victim].tribe if actors.has(victim) else "",
+        "against_tribemate":actors.has(victim) and actors[victim].tribe == actors[actor].tribe,
         "instance":id,"type":items[id].type,"action":action,"outcome":outcome,"nearby_witnesses":witnesses})
     if events.size() > 512:
         events.pop_front()
@@ -169,5 +185,5 @@ func result(routes: Dictionary) -> Dictionary:
             State.CARRIED: carried_cargo.append(row.duplicate(true))
             State.DROPPED: dropped.append(row.duplicate(true))
             _: abandoned.append(row.duplicate(true))
-    return {"floating":floating,"carried":carried_cargo,"dropped":dropped,"abandoned":abandoned,"configuration":configuration.duplicate(true),"seed":seed_value,"secured":secured,
+    return {"contributions":contributions.duplicate(true),"rng_state":rng.state,"floating":floating,"carried":carried_cargo,"dropped":dropped,"abandoned":abandoned,"configuration":configuration.duplicate(true),"seed":seed_value,"secured":secured,
         "unsecured":unsecured,"events":events.duplicate(true),"routes":routes.duplicate(true)}

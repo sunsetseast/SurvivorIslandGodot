@@ -124,12 +124,8 @@ func build(data: MarooningLayout, tribe_count: int) -> void:
     for i in tribe_count:
         var mount := layout.raft_mounts[i]
         mark("raft-mount-%d" % i, mount)
-        for j in 12:
-            var log := pole("raft-%d-bamboo-%d" % [i, j], mount + Vector3((j - 5.5) * .31, 0, 0), .19, 7, bamboo)
-            log.rotation.x = PI / 2
-        for z: float in [-2.1, 0, 2.1]:
-            box("raft-%d-seat" % i, mount + Vector3(0, .35, z), Vector3(3.8, .16, .5), wood)
-        box("raft-%d-deck" % i, mount + Vector3(0, -.16, 0), Vector3(4, .15, 7), bamboo)
+    box("DepartureGangplank",Vector3(0,layout.deck_y-.08,11),Vector3(1.8,.16,10),wood)
+    mark("departure-access",Vector3(0,layout.deck_y,6.0))
     mark("reward-dock", layout.reward)
     box("FloatingRewardDock", layout.reward, Vector3(5, .35, 5), wood)
     for x: float in [-2.2, 2.2]:
@@ -206,6 +202,10 @@ func _ship() -> void:
                     for index in range(0,triangle.size(),3):
                         remaining.append_array(cut_stair(PackedVector3Array([triangle[index],triangle[index+1],triangle[index+2]]),AABB(Vector3(stair_x-.65,1.8,-8.4),Vector3(1.3,4.9,3.8))))
                     triangle = remaining
+                var departure_faces := PackedVector3Array()
+                for index in range(0,triangle.size(),3):
+                    departure_faces.append_array(cut_stair(PackedVector3Array([triangle[index],triangle[index+1],triangle[index+2]]),AABB(Vector3(-.95,-3,7),Vector3(1.9,9,17))))
+                triangle = departure_faces
                 for vertex: Vector3 in triangle:
                     filtered.append(part.global_transform.affine_inverse() * vertex)
             var body := StaticBody3D.new()
@@ -234,7 +234,8 @@ func _ship() -> void:
     mast_shape.shape = cylinder
     mast.add_child(mast_shape)
     add_child(mast)
-    box("BowSafetyRail", Vector3(0, layout.deck_y + .6, 9.5), Vector3(8, 1.2, .12), wood)
+    for side: float in [-1,1]:
+        box("BowSafetyRail", Vector3(side*2.5, layout.deck_y + .6, 9.5), Vector3(3, 1.2, .12), wood)
     for i in 3:
         mark("spawn-group-%d" % i, Vector3(-2.4 + i * 2.4, layout.deck_y, 2))
     # Retain semantic legacy anchors for downstream tools, without solid cargo props.
