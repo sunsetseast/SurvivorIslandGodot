@@ -47,6 +47,7 @@ var _selection: SurvivorSelectionScreen
 var division := SurvivorSeasonConfiguration.new()
 var _configured := false
 var _manual_pick: Array = []
+var _marooning: MarooningPreview
 var _brand_panel: VBoxContainer
 
 func _ready() -> void:
@@ -142,6 +143,9 @@ func _suspend(value: bool) -> void:
     if is_instance_valid(_selection):
         _selection.process_mode = Node.PROCESS_MODE_DISABLED if value else Node.PROCESS_MODE_INHERIT
         _selection.visible = not value
+    if is_instance_valid(_marooning):
+        _marooning.touch.cancel()
+        _marooning.process_mode = Node.PROCESS_MODE_DISABLED if value else Node.PROCESS_MODE_INHERIT
     if locations.camp == null:
         return
     locations.camp.hud.touch.cancel()
@@ -175,6 +179,9 @@ func _process(delta: float) -> void:
     if screen == Screen.SELECTION and is_instance_valid(_selection):
         _review.survivorApp = JSON.stringify({"screen":"SELECTION", "actions":actions,
             "selection":_selection.review_state(), "season":"", "ui_font":_ui.theme.default_font.get_font_name()})
+        return
+    if is_instance_valid(_marooning):
+        _review.survivorApp = JSON.stringify({"screen":"MAROONING", "marooning":_marooning.review_state(), "slot":slot, "revision":save_revision, "season":""})
         return
     if remote != null:
         _review.survivorApp = JSON.stringify({"screen": Screen.keys()[screen], "actions": actions,
@@ -806,6 +813,8 @@ func _reroll() -> void:
 
 func _tribe_review() -> void:
     _menu(Screen.NEW_GAME, "Confirm Starting Tribes", "Seed %d · %s\n%s\n%s" % [division.seed_value, division.method, "Tap two contestants in different tribes to swap." if division.method == "Manual" else "Review the complete starting roster.", _season_storage_message()])
+    var preview := _button("marooning", "Private Marooning Preview · No Save", _open_marooning)
+    preview.disabled = division.configuration(contestant_catalog, selection_setup).is_empty()
     var columns := HBoxContainer.new()
     _stack.add_child(columns)
     for i in division.tribes.size():
@@ -875,3 +884,27 @@ func _confirm_season() -> void:
 
 func _season_storage_message() -> String:
     return "Account season · Local checkpoints and cloud synchronization" if cloud.store != null else "Guest season · Saved locally. Sign in and explicitly import to sync."
+
+func _open_marooning() -> void:
+    var config := division.configuration(contestant_catalog, selection_setup)
+    if config.is_empty() or is_instance_valid(_marooning) or session != null:
+        return
+    _release_title()
+    for child: Node in _ui.get_children():
+        _ui.remove_child(child)
+        child.queue_free()
+    _actions.clear()
+    _marooning = load("res://marooning/preview.tscn").instantiate()
+    _marooning.configuration = config.duplicate(true)
+    _marooning.catalog = contestant_catalog
+    _marooning.preferences = profile.preferences.duplicate(true)
+    _marooning.exited.connect(_close_marooning)
+    add_child(_marooning)
+
+func _close_marooning() -> void:
+    if not is_instance_valid(_marooning):
+        return
+    remove_child(_marooning)
+    _marooning.queue_free()
+    _marooning = null
+    _tribe_review()

@@ -15,9 +15,9 @@ if [[ "${TONSAI_PREPARE_SERVER:-0}" == "only" ]]; then
   output="$PWD/build/tonsai-bake-unused"
 fi
 rm -rf "$stage" "$output"
-mkdir -p "$stage/character_lab/assets" "$stage/tests" "$stage/tools/tonsai" "$output"
+mkdir -p "$stage/tools/marooning" "$stage/character_lab/assets" "$stage/tests" "$stage/tools/tonsai" "$output"
 touch build/.gdignore
-cp -R controllers simulation application persistence multiplayer diagnostics "$stage/"
+cp -R marooning controllers simulation application persistence multiplayer diagnostics "$stage/"
 mkdir -p "$stage/world/assets"
 cp world/water_surface.gd world/water.gdshader world/camp_fire.gd world/fire_flipbook.gdshader "$stage/world/"
 for asset in surface-swimming.res sunflowers-sky.jpg kloofendal-clear.jpg flame02.webp water-ripple.png seating_log.glb seat_stump.glb shore_rock.glb; do
@@ -26,8 +26,9 @@ done
 mkdir -p "$stage/tonsai/shaders" "$stage/tonsai/generated"
 cp tonsai/*.gd tonsai/*.tscn "$stage/tonsai/"
 cp tonsai/shaders/*.gdshader "$stage/tonsai/shaders/"
+cp tools/marooning/bake_nav.gd "$stage/tools/marooning/"
 cp tools/tonsai/bake_nav.gd tools/tonsai/bake_server_collision.gd "$stage/tools/tonsai/"
-cp tests/phase4c_test.gd tests/phase4c_camp_test.gd tests/tonsai_test.gd tests/application_test.gd tests/credential_test.gd tests/benchmark_test.gd tests/title_test.gd tests/selection_test.gd "$stage/tests/"
+cp tests/marooning_test.gd tests/phase4c_test.gd tests/phase4c_camp_test.gd tests/tonsai_test.gd tests/application_test.gd tests/credential_test.gd tests/benchmark_test.gd tests/title_test.gd tests/selection_test.gd "$stage/tests/"
 cp character_lab/actor.gd "$stage/character_lab/"
 cp character_lab/assets/maeve.glb "$stage/character_lab/assets/"
 cp icon.svg "$stage/" 2>/dev/null || true
@@ -88,6 +89,7 @@ run_godot() {
   return "$result"
 }
 run_godot --editor --import --quit
+run_godot --script res://tools/marooning/bake_nav.gd
 run_godot --script res://tools/tonsai/bake_nav.gd
 if [[ "${TONSAI_PREPARE_SERVER:-0}" != 0 ]]; then
   run_godot --script res://tools/tonsai/bake_server_collision.gd
@@ -97,6 +99,7 @@ if [[ "${TONSAI_PREPARE_SERVER:-0}" != 0 ]]; then
 fi
 cp "$stage/tonsai/generated/navigation.res" tonsai/generated/navigation.res
 if [[ "${TONSAI_STAGE_ONLY:-0}" == 1 ]]; then exit 0; fi
+run_godot --script res://tests/marooning_test.gd
 run_godot --fixed-fps 60 --script res://tests/tonsai_test.gd
 run_godot --fixed-fps 60 --script res://tests/application_test.gd
 run_godot --script res://tests/selection_test.gd
@@ -122,3 +125,4 @@ assert 'Survivor Island' in html
 PY
 touch "$output/.nojekyll"
 cp controllers/third_party/PHANTOM_CAMERA_LICENSE.txt "$output/third-party-notices.txt"
+cat marooning/assets/PROVENANCE.txt >> "$output/third-party-notices.txt"
