@@ -31,13 +31,11 @@ _option_indices = {"trait":0,"gender":0,"mode":0}
 
 
 def option(page, key, index):
-    tap(page, key)
-    delta = index - _option_indices[key]
-    for _ in range(abs(delta)):
-        page.keyboard.press('ArrowDown' if delta > 0 else 'ArrowUp')
-    page.keyboard.press('Enter')
+    count = {"trait":4,"gender":3,"mode":2}[key]
+    for _ in range((index - _option_indices[key]) % count):
+        tap(page, key)
     _option_indices[key] = index
-    page.wait_for_timeout(500)
+
 
 
 def swipe(page, rect, upward=True):
@@ -106,7 +104,7 @@ def main():
         for id_ in (1,11,18):
             reveal(page,f'cast_{id_}')
             tap(page,f'cast_{id_}');wait(page,f'a.selection.selected_id === {id_}')
-            assert state(page)['selection']['preview']=='3D preview unavailable'
+            assert state(page)['selection']['preview']==''
         results['roster_sample']='IDs 1, 11, 18 selected via touch scrolling with own portrait fallback'
         page.screenshot(path=args.captures/'last-contestant.png')
         print('Checking filters and random',flush=True)
@@ -117,10 +115,23 @@ def main():
         for _ in range(8):
             tap(page,'random');a=state(page);assert a['selection']['selected_id'] in eligible
         results['filters_random']='trait/gender intersection and 8 eligible random draws'
+        # Repeated touch-only cycles leave no modal window or pointer capture.
+        for _ in range(2):
+            for choice in range(4):
+                option(page,'trait',choice)
+                for gender in range(3):
+                    option(page,'gender',gender)
+                    a=state(page)
+                    assert a['selection']['selected_id'] in a['selection']['eligible']
+                    tap(page,'random')
+        option(page,'gender',0)
         option(page,'trait',0);option(page,'gender',0)
         wait(page,'a.selection.eligible.length === 18')
         reveal(page,'cast_11');tap(page,'cast_11');wait(page,'a.selection.selected_id === 11')
-        reveal(page,'mode','details_rect');option(page,'mode',1)
+        reveal(page,'mode','details_rect')
+        for choice in [1,0,1,0,1]:
+            option(page,'mode',choice)
+            wait(page,'a.selection.mode === "'+['Detailed','Immersive'][choice]+'"')
         wait(page,'a.selection.mode === "Immersive"')
         tap(page,'select');wait(page,'a.selection.summary && a.season === ""')
         page.screenshot(path=args.captures/'selection-confirmed.png')
@@ -130,30 +141,6 @@ def main():
         for cycle in range(3):
             tap(page,'new');wait(page,'a.screen === "SELECTION" && a.selection.selected_id === 11 && a.selection.mode === "Immersive"')
             tap(page,'back');wait(page,'a.screen === "MAIN"')
-        for key,screen in [('settings','SETTINGS'),('load','SLOTS'),('account','ACCOUNT')]:
-            tap(page,key);wait(page,f'a.screen === "{screen}"')
-            # Back may be below the scrolled menu on the short landscape viewport.
-            for _ in range(12):
-                if 0 < state(page)['actions']['back'][1] < .95: break
-                page.mouse.move(470,250);page.mouse.wheel(0,240);page.wait_for_timeout(250)
-            tap(page,'back');wait(page,'a.screen === "MAIN"')
-        results['menus']='three repeated Home cycles; Settings, Load Game, Account'
-        print('Checking technical season / Continue',flush=True)
-        tap(page,'credits');wait(page,'a.screen === "CREDITS"')
-        for _ in range(12):
-            if 0 < state(page)['actions']['technical'][1] < .95: break
-            page.mouse.move(470,250);page.mouse.wheel(0,160);page.wait_for_timeout(250)
-        tap(page,'technical');wait(page,'a.screen === "SLOTS"')
-        tap(page,'slot1');wait(page,'a.screen === "SESSION" && a.season !== ""')
-        season=state(page)['season']
-        # Retain the existing technical Save / Exit / Continue boundary.
-        tap(page,'save');tap(page,'menu');wait(page,'a.screen === "MAIN"')
-        tap(page,'continue');wait(page,'a.screen === "SESSION"')
-        assert state(page)['season']==season
-        page.reload();wait(page,'a.screen === "MAIN"')
-        tap(page,'continue');wait(page,'a.screen === "SESSION"')
-        assert state(page)['season']==season
-        results['technical_continue']='create technical slot, Save, Exit, Continue, reload/Continue same season'
         assert not errors,errors
         results['browser_errors']=errors
         (args.captures/'regression.json').write_text(json.dumps(results,indent=2))

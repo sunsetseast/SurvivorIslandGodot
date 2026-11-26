@@ -125,7 +125,7 @@ func run() -> void:
             check(setup.validate(private_catalog), "Every real ID hands off")
             portrait_preview.show_contestant(entry)
             await process_frame
-            check(portrait_preview._portrait.texture != null, "Each private portrait fallback loads")
+            check(portrait_preview._portrait.texture != null and not portrait_preview._label.visible, "Each private portrait displays without an unavailable overlay")
         portrait_preview.queue_free()
     # Navigation never writes a season; technical season remains a distinct action.
     var app := load("res://application/game_app.tscn").instantiate() as SurvivorGameApp

@@ -341,7 +341,7 @@ frames nested mesh bounds and supports mouse/touch yaw rotation. It disables ren
 without a model and releases its viewport/input/children on exit. No threaded loading
 is assumed. Only an explicitly staged ID-bound model may be loaded. No approved actual
 contestant model was available in this workspace; all 18 use their own existing portrait
-with a clear 3D-unavailable label. No rejected model is reused as a contestant.
+as the intentional temporary presentation, without an unavailable overlay. No rejected model is reused as a contestant.
 
 Private build procedure (never public Actions): stage the reconciled catalog and
 optimized 512px portraits into an ignored dedicated build directory, then set
@@ -371,3 +371,13 @@ packager now streams consecutive 20 MiB gzip parts through DecompressionStream w
 needed, rather than reducing approved asset quality. It verifies byte-exact pack/engine
 reconstruction before publication; this adapter does not change Godot's single-threaded
 export or public hosting destinations.
+
+### Phase 4B mobile input hotfix
+
+Trait, gender and information mode now use inline themed cycling buttons. No
+OptionButton/PopupMenu is created: the existing Web touch-to-mouse emulation remains
+disabled, and selection must not depend on mouse-only modal popup dismissal. Touch
+regression cycles all filter combinations repeatedly and changes mode using actual
+taps, without keyboard input. Selection tooltips are removed. Valid portraits have
+no unavailable overlay; absent portraits/models retain the error state and the
+isolated 3D preview architecture is unchanged.

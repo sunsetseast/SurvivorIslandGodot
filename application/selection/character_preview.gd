@@ -219,7 +219,7 @@ func _load_selection(token: int, model_path: String, portrait_path: String) -> v
             _portrait.texture = texture
             _portrait.show()
             _label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
-            _set_status("3D preview unavailable")
+            _set_status("")
             return
     _set_status("Preview unavailable")
 

@@ -41,31 +41,16 @@ func _ready() -> void:
     sections.add_child(left)
     var filters := HBoxContainer.new()
     left.add_child(filters)
-    var trait_control := OptionButton.new()
-    for value: String in ["All", "Physical", "Mental", "Social"]:
-        trait_control.add_item(value)
-    trait_control.selected = maxi(0, ["All", "Physical", "Mental", "Social"].find(setup.trait_filter))
-    trait_control.custom_minimum_size.y = 44
-    trait_control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    trait_control.add_theme_font_size_override("font_size", 16)
-    filters.add_child(trait_control)
-    trait_control.tooltip_text = "Trait classification"
-    actions.trait = trait_control
-    trait_control.item_selected.connect(func(index: int) -> void:
-        setup.trait_filter = trait_control.get_item_text(index)
-        _filter())
-    var gender := OptionButton.new()
-    for value: String in ["All", "Women", "Men"]:
-        gender.add_item(value)
-    gender.selected = maxi(0, ["All", "female", "male"].find(setup.gender_filter))
-    gender.custom_minimum_size.y = 44
-    gender.add_theme_font_size_override("font_size", 16)
-    filters.add_child(gender)
-    gender.tooltip_text = "Gender"
-    actions.gender = gender
-    gender.item_selected.connect(func(index: int) -> void:
-        setup.gender_filter = ["All", "female", "male"][index]
-        _filter())
+    _cycle("trait", ["All traits", "Physical", "Mental", "Social"],
+        maxi(0, ["All", "Physical", "Mental", "Social"].find(setup.trait_filter)),
+        func(index: int) -> void:
+            setup.trait_filter = ["All", "Physical", "Mental", "Social"][index]
+            _filter(), filters)
+    _cycle("gender", ["All genders", "Women", "Men"],
+        maxi(0, ["All", "female", "male"].find(setup.gender_filter)),
+        func(index: int) -> void:
+            setup.gender_filter = ["All", "female", "male"][index]
+            _filter(), filters)
     _roster_scroll = SurvivorMenuScroll.new()
     _roster_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
     _roster_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -154,6 +139,17 @@ func _button(key: String, text: String, callback: Callable, parent: Control) -> 
     actions[key] = button
     return button
 
+func _cycle(key: String, labels: Array, initial: int, changed: Callable, parent: Control) -> void:
+    # No PopupMenu: Web deliberately disables touch-to-mouse emulation, and
+    # modal popup capture can strand touch focus on Safari. Use normal themed taps.
+    var index := [initial]
+    var button := _button(key, labels[initial], func() -> void: pass, parent)
+    button.add_theme_font_size_override("font_size", 16)
+    button.pressed.connect(func() -> void:
+        index[0] = (int(index[0]) + 1) % labels.size()
+        button.text = labels[index[0]]
+        changed.call(index[0]))
+
 func _clear(node: Node) -> void:
     for child: Node in node.get_children():
         node.remove_child(child)
@@ -175,7 +171,6 @@ func _draw_roster() -> void:
     for entry: Dictionary in _eligible:
         var row := _button("cast_%d" % int(entry.id), entry.name, choose.bind(int(entry.id)), _roster)
         row.text = ""
-        row.tooltip_text = entry.name
         row.custom_minimum_size.y = 62
         row.add_theme_stylebox_override("normal", IslandTheme.wood(IslandTheme.GOLD if int(entry.id) == setup.selected_id else Color.WHITE))
         var inset := MarginContainer.new()
@@ -253,15 +248,10 @@ func _show_selected() -> void:
         bar.custom_minimum_size.y = 8
         _details.add_child(bar)
     _details.add_child(_label("INFORMATION MODE", true, 18))
-    var mode := OptionButton.new()
-    mode.add_item("Detailed")
-    mode.add_item("Immersive")
-    mode.selected = 1 if setup.information_mode == "Immersive" else 0
-    mode.custom_minimum_size.y = 44
-    mode.add_theme_font_size_override("font_size", 17)
-    mode.item_selected.connect(func(index: int) -> void: setup.information_mode = ["Detailed", "Immersive"][index])
-    _details.add_child(mode)
-    actions.mode = mode
+    _cycle("mode", ["Detailed", "Immersive"],
+        1 if setup.information_mode == "Immersive" else 0,
+        func(index: int) -> void:
+            setup.information_mode = ["Detailed", "Immersive"][index], _details)
     _details.add_child(_label("Your own ratings remain available in both modes. Immersive will show general impressions of opponents and withhold their detailed strategic tendencies."))
     for group: String in GROUPS:
         _details.add_child(_label(group.to_upper(), true, 20))
