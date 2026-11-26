@@ -267,7 +267,13 @@ func update_hud() -> void:
     if simulation.phase == MarooningRace.Phase.BOARDING:
         hud.text = "Boarding · %ds" % ceili(simulation.boarding_seconds-simulation.elapsed)
     elif not simulation.reward.tribe.is_empty():
-        preview.subtitle.text = "%s claimed the fishing equipment. Head to your tribe’s landing." % simulation.reward.tribe
+        var winner_name: String = simulation.reward.tribe
+        for tribe: Dictionary in preview.configuration.tribes:
+            if tribe.id == simulation.reward.tribe:
+                winner_name = tribe.name
+        preview.subtitle.text = "%s claimed the fishing equipment.\nHead to your tribe’s landing." % winner_name
+    else:
+        preview.subtitle.text = "Race for the fishing equipment · Paddle together or swim ahead.\nAim for the centre. Your tribe steers automatically."
 func finish() -> void:
     set_physics_process(false)
     preview.touch.cancel()
