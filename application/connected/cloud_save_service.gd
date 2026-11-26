@@ -70,6 +70,10 @@ func slot_status(index: int, entry: Dictionary) -> String:
     return "Sync pending"
 
 func schedule(slot: int, immediate := false) -> void:
+    if saves != null:
+        var entry := saves.inspect(slot)
+        if entry.status == "valid" and entry.state.ruleset != SeasonSimulation.RULESET:
+            return
     if store == null:
         return
     var now := Time.get_ticks_msec()
@@ -111,6 +115,8 @@ func reset(slot: int) -> bool:
     return store == null or write_record(slot, {})
 
 func mark_guest_import(slot: int, state: Dictionary) -> bool:
+    if state.get("ruleset") != SeasonSimulation.RULESET:
+        return false
     if not write_record(slot, {"season": state.season_id, "guest_import": true}):
         return false
     schedule(slot, true)
@@ -171,7 +177,7 @@ func resolve(slot: int, choice: String, confirmed_revision: int) -> String:
     if choice == "cloud":
         return await restore(slot, String(sync.get("id", "")), confirmed_revision, true)
     var local := saves.inspect(slot)
-    if local.status != "valid":
+    if local.status != "valid" or local.state.ruleset != SeasonSimulation.RULESET:
         return "invalid_snapshot"
     if choice == "local" and confirmed_revision > 0:
         sync = {"id": sync.id, "season": local.state.season_id, "revision": confirmed_revision}
@@ -219,7 +225,7 @@ func _sync_slot(slot: int) -> void:
     var epoch := auth.epoch
     var sync := record(slot)
     var local := saves.inspect(slot)
-    if local.status != "valid":
+    if local.status != "valid" or local.state.ruleset != SeasonSimulation.RULESET:
         _busy = false
         return
     if sync.get("season") != local.state.season_id:

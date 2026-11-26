@@ -44,6 +44,9 @@ var _title_environment: IslandTitleEnvironment
 var selection_setup := SurvivorNewSeasonSetup.new()
 var contestant_catalog := SurvivorContestantCatalog.new()
 var _selection: SurvivorSelectionScreen
+var division := SurvivorSeasonConfiguration.new()
+var _configured := false
+var _manual_pick: Array = []
 var _brand_panel: VBoxContainer
 
 func _ready() -> void:
@@ -183,7 +186,7 @@ func _process(delta: float) -> void:
         return
     var view := session.view("tonsai") if session != null else {}
     _review.survivorApp = JSON.stringify({"screen": Screen.keys()[screen], "actions": actions,
-        "slot": slot, "revision": save_revision, "status": _status.text, "guest": profile.guest_id,
+        "division": division.tribes, "controlled":view.get("controlled", ""), "cast":view.get("cast", {}), "slot": slot, "revision": save_revision, "status": _status.text, "guest": profile.guest_id,
         "preferences": profile.preferences, "season": view.get("season_id", ""),
         "tick": view.get("tick", 0), "knowledge": view.get("knowledge", []).size(),
         "location_ms": _location_ms, "unload_ms": _unload_ms, "save_usec": _save_usec,
@@ -232,11 +235,13 @@ func _new_game() -> void:
     _selection.catalog = contestant_catalog
     _selection.setup = selection_setup
     _selection.back_requested.connect(_main)
+    _selection.confirmed.connect(_season_paths)
     _ui.add_child(_selection)
     _actions = _selection.actions
 
 
 func _credits() -> void:
+    _configured = false
     _menu(Screen.CREDITS, "Credits & notices", "Survivor Island · Development build\n\nTonsai environment: existing project reconstruction and CC0 assets from Poly Haven.\nWater: GodotLearning Stylized Water (CC0).\nAnimation: Quaternius (CC0). Fire: Unity Labs (CC0).\nTypography: Survivant in private builds (rights verification pending). Noto Sans fallback, Google (SIL Open Font License 1.1).\nCamera damping: Phantom Camera (MIT).\n\nSource and license notices: docs/phase2/ASSETS.md, application/presentation/fonts/LICENSE.txt and controllers/third_party/PHANTOM_CAMERA_LICENSE.txt.\nOriginal logo: developer-approved reuse; distribution clearance remains unverified.\nNo commercial affiliation is claimed.")
     _button("technical", "Technical Season Test", _slots.bind(true))
     var notices := Label.new()
@@ -460,7 +465,13 @@ func _new(index: int) -> void:
     if principal.is_empty():
         _status.text = "Local storage is unavailable."
         return
-    var sim := SeasonSimulation.new(principal, GameStateData.new_id(), randi())
+    var config := division.configuration(contestant_catalog, selection_setup) if _configured else {}
+    if _configured and (config.is_empty() or cloud.store != null):
+        _status.text = "Invalid configuration or account mode. Configurable seasons require guest/local mode."
+        return
+    var sim := SeasonSimulation.new(principal, GameStateData.new_id(), int(config.seed) if _configured else randi())
+    if _configured:
+        sim.configure(config, contestant_catalog)
     if _enter(sim, index, 0):
         _save(false)
 
@@ -677,6 +688,8 @@ func _update_account_layout() -> void:
     var width := _ui.size.x / content_scale
     _account_panel.scale = Vector2.ONE * content_scale
     var menu_width := clampf(width * .30, 245, 310) if screen == Screen.MAIN else clampf(width - 88, 140, 560)
+    if screen == Screen.NEW_GAME and _actions.has("confirm"):
+        menu_width = clampf(width - 88, 140, 900)
     var frame := _account_panel.get_theme_stylebox("panel")
     var vertical_margin := frame.get_content_margin(SIDE_TOP) + frame.get_content_margin(SIDE_BOTTOM)
     var reserve := 32.0 if screen == Screen.MAIN else maxf(64.0, vertical_margin + 24.0)
@@ -745,3 +758,119 @@ func _layout_menus() -> void:
     for child: Node in _ui.get_children():
         if child is PanelContainer and child != _account_panel:
             _position_panel(child, screen == Screen.SESSION)
+
+func _season_paths() -> void:
+    _configured = true
+    _menu(Screen.NEW_GAME, "Create Your Season", "Configurable seasons use guest/local saves. Cloud synchronization is not available yet.")
+    if cloud.store != null:
+        _status.text += "\nReturn to Account and explicitly choose guest mode to create a season."
+    _button("standard", "Standard", _standard_formats)
+    _button("custom", "Custom", _custom_options)
+    _button("back", "Back to Survivor", _new_game)
+
+func _standard_formats() -> void:
+    _menu(Screen.NEW_GAME, "Standard Season", "Choose your starting format")
+    for format: String in ["Two Tribes", "Three Tribes", "Brains / Brawn / Beauty", "Battle of the Sexes"]:
+        _button(format, format, _choose_format.bind(format))
+    _button("back", "Back", _season_paths)
+
+func _choose_format(format: String) -> void:
+    division.count = 3 if format in ["Three Tribes", "Brains / Brawn / Beauty"] else 2
+    division.method = "Balanced" if format in ["Two Tribes", "Three Tribes"] else format
+    _reroll()
+
+func _custom_options() -> void:
+    _menu(Screen.NEW_GAME, "Custom Season", "Themed assignments enforce compatible tribe counts.")
+    _button("count", "%d Tribes" % division.count, _cycle_count)
+    _button("method", "Assignment: " + division.method, _cycle_method)
+    _button("information", "Information: " + selection_setup.information_mode, _cycle_information)
+    _button("rosters", "Assign Tribes", _reroll)
+    _button("back", "Back", _season_paths)
+
+func _cycle_count() -> void:
+    division.count = 3 if division.count == 2 else 2
+    _custom_options()
+
+func _cycle_method() -> void:
+    var methods := ["Random", "Balanced", "Brains / Brawn / Beauty", "Battle of the Sexes", "Manual"]
+    division.method = methods[(methods.find(division.method) + 1) % methods.size()]
+    _custom_options()
+
+func _cycle_information() -> void:
+    selection_setup.information_mode = "Immersive" if selection_setup.information_mode == "Detailed" else "Detailed"
+    _custom_options()
+
+func _reroll() -> void:
+    division.seed_value = randi()
+    division.assign(contestant_catalog)
+    _manual_pick.clear()
+    _tribe_review()
+
+func _tribe_review() -> void:
+    _menu(Screen.NEW_GAME, "Confirm Starting Tribes", "Seed %d · %s\n%s\nGuest/local only · Cloud sync unavailable" % [division.seed_value, division.method, "Tap two contestants in different tribes to swap." if division.method == "Manual" else "Review the complete starting roster."])
+    var columns := HBoxContainer.new()
+    _stack.add_child(columns)
+    for i in division.tribes.size():
+        var column := VBoxContainer.new()
+        column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        columns.add_child(column)
+        var tribe: Dictionary = division.tribes[i]
+        _button("name%d" % i, tribe.name + (" · " + tribe.label if not tribe.label.is_empty() else "") + (" · YOUR TRIBE" if selection_setup.selected_id in tribe.members else ""), _cycle_tribe.bind(i, "name"), column)
+        var color_button := _button("color%d" % i, "Color: " + tribe.color, _cycle_tribe.bind(i, "color"), column)
+        color_button.add_theme_stylebox_override("normal", IslandTheme.wood(Color(tribe.color)))
+        var banner := "res://private_brand/tribe-%s.png" % tribe.color
+        if ResourceLoader.exists(banner):
+            color_button.icon = load(banner)
+            color_button.expand_icon = true
+            color_button.add_theme_constant_override("icon_max_width", 32)
+        for j in tribe.members.size():
+            var entry := contestant_catalog.get_by_id(int(tribe.members[j]))
+            var row := HBoxContainer.new()
+            column.add_child(row)
+            if ResourceLoader.exists(entry.portrait_path):
+                var portrait := TextureRect.new()
+                portrait.texture = load(entry.portrait_path)
+                portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+                portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+                portrait.custom_minimum_size = Vector2(36, 48)
+                row.add_child(portrait)
+            var button := _button("member%d" % entry.id, entry.name + (" · YOU" if entry.id == selection_setup.selected_id else "") + (" · SELECTED" if _manual_pick == [i, j] else ""), _manual_tap.bind(i, j), row)
+            button.add_theme_font_size_override("font_size", 15)
+            button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+            button.add_theme_color_override("font_disabled_color", Color.WHITE)
+            button.disabled = division.method != "Manual"
+    if division.method in ["Random", "Balanced"]:
+        _button("reroll", "Reroll", _reroll)
+    var confirm := _button("confirm", "Confirm Season · Choose Empty Slot", _confirm_season)
+    confirm.disabled = cloud.store != null or division.configuration(contestant_catalog, selection_setup).is_empty()
+    _button("back", "Back to Configuration", _custom_options)
+
+    _update_account_layout()
+
+func _cycle_tribe(index: int, field: String) -> void:
+    var choices: Array = SurvivorSeasonConfiguration.NAMES if field == "name" else SurvivorSeasonConfiguration.COLORS
+    var current: int = choices.find(division.tribes[index][field])
+    for offset in range(1, choices.size() + 1):
+        var candidate: String = choices[(current + offset) % choices.size()]
+        var occupied := false
+        for i in division.tribes.size():
+            if i != index and (division.tribes[i][field] == candidate or field == "color" and candidate in ["red", "orange"] and division.tribes[i].color in ["red", "orange"]):
+                occupied = true
+        if not occupied:
+            division.tribes[index][field] = candidate
+            break
+    _tribe_review()
+
+func _manual_tap(tribe: int, member: int) -> void:
+    if division.method != "Manual":
+        return
+    if _manual_pick.size() == 2 and _manual_pick[0] != tribe:
+        division._swap(int(_manual_pick[0]), int(_manual_pick[1]), tribe, member)
+        _manual_pick.clear()
+    else:
+        _manual_pick = [tribe, member]
+    _tribe_review()
+
+func _confirm_season() -> void:
+    if cloud.store == null and not division.configuration(contestant_catalog, selection_setup).is_empty():
+        _slots(true)

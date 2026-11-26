@@ -381,3 +381,80 @@ regression cycles all filter combinations repeatedly and changes mode using actu
 taps, without keyboard input. Selection tooltips are removed. Valid portraits have
 no unavailable overlay; absent portraits/models retain the error state and the
 isolated 3D preview architecture is unchanged.
+
+### Phase 4C configurable local seasons
+
+`SurvivorSeasonConfiguration` owns transient seeded division and exact membership
+validation. Ordinary Standard formats use balanced assignment; Random is Fisher–Yates;
+Balanced accepts improving equal-capacity swaps for at most 600 attempts, minimizing
+pairwise gender and Physical/Mental/Social total variance. Themed labels remain separate
+from tribe names. Manual uses two taps to swap. Confirm then an empty slot is the only
+creation boundary. No catalog rating or default is recalibrated.
+
+`configurable-single-player` v1 persists the catalog fingerprint, seed, selected original
+ID, information preference, named/color tribes and their confirmed membership/locations.
+Roster attributes and copied mutable starting state are separate. The selected logical
+tribe occupies Tonsai; other tribes simulate independently offscreen. The existing rig
+is temporary. Additional spawn positions serve nine-person tribes. The technical
+ruleset and wire protocol retain their versions. SaveCodec dispatches validation by
+ruleset and normalizes whole JSON numbers before configurable validation. Restoration
+rebuilds catalog order before restoring camp state and deterministic RNG. Current v1
+requires catalog defaults for mutable fields because this phase does not change them;
+future mechanics must version their transition validation.
+
+Configurable creation requires explicit guest mode. It neither signs out an account nor
+moves its saves. Cloud scheduling rejects unsupported rulesets. Follow-up: introduce a
+server-owned, immutable approved catalog/fingerprint and a separate configurable v1
+validator in the hosted save RPC; validate complete membership, controller ownership,
+locations, participant journals, pose and RNG against it; retain technical v1 dispatch
+and existing account namespace/revision/conflict checks. Add server/client cross-codec
+fixtures before enabling account creation or configurable uploads. No hosted migration,
+service or multiplayer deployment is included here. Future ruleset versions may implement
+merge at 12, Final Three, swaps, idols and advantages; none are selectable now.
+
+Targeted checks: stage private inputs with the existing Phase 4B helper, then run
+`tests/phase4c_test.gd` and `tests/phase4c_camp_test.gd` in the Tonsai stage. The former
+covers representative seeds, themed formats, manual swap/rejection, exact attributes,
+6/9 projections, codec restore and deterministic continuation, plus technical saves.
+The latter loads both actual camp sizes and verifies spawn clearance, conversations,
+selected participant journals and saved pose. Keep private captures and catalogs out
+of public Git and Actions artifacts. Mobile Chromium emulation is a regression aid;
+physical iPhone Safari still requires device review.
+
+The configurable codec uses sorted JSON keys for canonical output; the technical
+encoder retains its existing ordering. Configurable guest saves are excluded from
+account import and rejected again at import and upload boundaries. Private UI staging
+also allowlists the five existing `Assets/Tribe/*-banner.png` files, reduced with their
+original proportions intact. The review uses parallel tribe columns and banner icons.
+`tools/selection/review_season_web.py` runs one touch-only Chromium landscape flow
+against a temporary authenticated loopback server, capturing setup and both camp sizes
+and exercising Save, Exit, Continue, Reload and Load Game without cloud mutation.
+
+### Phase 4C compatibility hotfix
+
+Catalog compatibility now hashes an explicit, ID-sorted gameplay projection (`id`,
+`name`, gender, trait, style, attributes, totals and starting defaults), tagged
+`gameplay-v1`. Portrait/model paths and original/appearance season metadata are
+excluded. The exact shipped Phase 4C preview digest has a pinned migration to its
+approved gameplay digest; it is accepted only when the current gameplay digest still
+matches that pin. Unknown old digests and changed gameplay calibrations fail closed.
+Decode upgrades the in-memory configuration; the existing local save flow writes the
+new digest on its next checkpoint. No account/cloud migration is involved.
+
+Initial tribe names and compatible unique colors use a separate seeded shuffle,
+leaving seeded membership behavior unchanged. Later membership rerolls retain the
+current customized identities. The red/orange exclusion is enforced before color
+selection and remains independently validated.
+
+The failed Tonsai run 45739892691 omitted the shared simulation's three typed
+catalog/setup/configuration dependencies from the dedicated server stage. The stage
+now explicitly copies only those scripts, without selection UI or restricted data,
+portraits, models, fonts or other artwork. The server still runs the unchanged
+technical multiplayer ruleset. No hosted server deployment is part of this fix.
+Public synthetic compatibility fixtures run in the isolated simulation stage; private
+Phase 4C tests additionally exercise the exact shipped-preview migration pin.
+
+After the Docker gate passed, the previously unreachable Web regression exposed an
+older navigation assumption: its technical-season Credits button was below the
+visible scroll panel (normalized Y about 1.89). The browser helper now reveals Credits
+actions with touch swipes before tapping. Product UI and gameplay remain unchanged.

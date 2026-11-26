@@ -11,6 +11,10 @@ fi
 stage="$PWD/build/server"
 rm -rf "$stage"
 mkdir -p "$stage"/{application/connected,controllers,server,simulation,multiplayer,world,tonsai/generated}
+# Shared simulation has typed configurable-rule dependencies. Code only: never stage
+# private_cast/private_brand, portraits, models, fonts or selection UI on the host.
+mkdir -p "$stage/application/selection"
+cp application/selection/{catalog,setup,season_configuration}.gd "$stage/application/selection/"
 cp server/*.gd "$stage/server/"
 cp application/connected/supabase_transport.gd "$stage/application/connected/"
 cp controllers/physical_motor.gd "$stage/controllers/"

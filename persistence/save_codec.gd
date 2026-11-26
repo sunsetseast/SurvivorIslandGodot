@@ -8,7 +8,7 @@ const MAX_REVISION := 4_000_000_000
 
 static func encode(state: Dictionary, revision: int, stamp: int) -> String:
     var payload := JSON.stringify({"schema": SCHEMA, "game_version": GAME_VERSION,
-        "save_revision": revision, "timestamp": stamp, "state": state}, "", false, true)
+        "save_revision": revision, "timestamp": stamp, "state": state}, "", state.get("ruleset") == SurvivorSeasonConfiguration.RULESET, true)
     return JSON.stringify({"payload": payload, "sha256": payload.sha256_text()})
 
 static func decode(raw: String) -> Dictionary:
@@ -31,13 +31,19 @@ static func decode(raw: String) -> Dictionary:
             or not GameStateData.integer(envelope.get("timestamp"), 1, 4_102_444_800) \
             or envelope.get("game_version") is not String:
         return bad
-    if state.get("ruleset") != SeasonSimulation.RULESET or state.get("ruleset_version") != SeasonSimulation.RULESET_VERSION:
+    if state.get("ruleset") not in [SeasonSimulation.RULESET, SurvivorSeasonConfiguration.RULESET] or state.get("ruleset_version") != 1:
         return {"status": "unsupported"}
     if envelope.schema == 1:
         # V1 stored camera/body pose without the dive flag.
         if state.get("pose") is Dictionary and not state.pose.is_empty():
             state.pose["underwater"] = false
         envelope.schema = SCHEMA
+    if state.get("ruleset") == SurvivorSeasonConfiguration.RULESET:
+        state = SurvivorContestantCatalog._integers(state)
+        if state.get("configuration") is Dictionary and state.configuration.get("catalog") is String:
+            state.configuration.catalog = SurvivorSeasonConfiguration.migrate_fingerprint(
+                state.configuration.catalog, SurvivorContestantCatalog.new())
+        envelope.state = state
     if not _valid_state(state):
         return bad
     envelope["status"] = "valid"
@@ -50,6 +56,8 @@ static func _valid_state(state: Dictionary) -> bool:
             or not GameStateData.integer(tick, 0, SeasonSimulation.MAX_TICK) \
             or not GameStateData.integer(state.get("revision"), tick, MAX_REVISION):
         return false
+    if state.get("ruleset") == SurvivorSeasonConfiguration.RULESET:
+        return _valid_configurable(state)
     if state.get("controlled") != SeasonCatalog.CONTROLLED or state.get("phase") != "camp" \
             or state.get("day") != floori(float(tick) / SeasonSimulation.TICKS_PER_DAY) + 1 \
             or state.get("tribes") != SeasonCatalog.TRIBES:
@@ -76,7 +84,7 @@ static func _valid_camp(camp: Variant, roster: Dictionary, location: String, tic
     if objects is not Dictionary or objects.get("fire") is not Dictionary or objects.fire.get("lit") is not bool:
         return false
     var people: Variant = camp.get("people")
-    if people is not Dictionary or people.size() != 6:
+    if people is not Dictionary or people.size() != roster.values().filter(func(p: Dictionary) -> bool: return p.location == location).size():
         return false
     var claimed := {}
     for id: String in roster:
@@ -92,7 +100,7 @@ static func _valid_camp(camp: Variant, roster: Dictionary, location: String, tic
         if stage == "waiting":
             if not activity.is_empty():
                 return false
-        elif id == SeasonCatalog.CONTROLLED or not CampSimulation.ACTIVITIES.has(activity) or claimed.has(activity):
+        elif roster[id].controller == "human" or not CampSimulation.ACTIVITIES.has(activity) or claimed.has(activity):
             return false
         else:
             claimed[activity] = id
@@ -113,3 +121,33 @@ static func _valid_camp(camp: Variant, roster: Dictionary, location: String, tic
 static func _parse(text: String) -> Variant:
     var parser := JSON.new()
     return parser.data if parser.parse(text) == OK else null
+
+static func _valid_configurable(state: Dictionary) -> bool:
+    var config: Variant = state.get("configuration")
+    if config is not Dictionary or config.get("tribes") is not Array or not GameStateData.integer(config.get("selected"), 1, 18) or config.get("information") not in SurvivorNewSeasonSetup.INFORMATION_MODES or config.get("seed") != state.seed:
+        return false
+    var catalog := SurvivorContestantCatalog.new()
+    if config.get("catalog") != SurvivorSeasonConfiguration.fingerprint(catalog):
+        return false
+    var setup := SurvivorNewSeasonSetup.new()
+    setup.selected_id = int(config.selected)
+    setup.information_mode = config.information
+    var division := SurvivorSeasonConfiguration.new()
+    division.count = config.tribes.size()
+    division.method = str(config.get("method", ""))
+    division.tribes = config.tribes
+    division.seed_value = int(config.seed)
+    if not division.validate(catalog, setup.selected_id) or division.configuration(catalog, setup) != config:
+        return false
+    var roster := SurvivorSeasonConfiguration.roster_for(config, catalog, state.player_id)
+    if state.get("roster") != roster or state.get("controlled") != str(setup.selected_id) or state.get("phase") != "camp" or state.get("day") != floori(float(state.tick) / SeasonSimulation.TICKS_PER_DAY) + 1:
+        return false
+    var locations := {}
+    for tribe: Dictionary in config.tribes:
+        locations[tribe.id] = tribe.location
+    if state.get("tribes") != locations or state.get("world") is not Dictionary or state.world.size() != locations.size() or state.get("pose") != {} and not GameStateData.pose(state.get("pose")):
+        return false
+    for location: String in locations.values():
+        if not _valid_camp(state.world.get(location), roster, location, int(state.tick)):
+            return false
+    return true
