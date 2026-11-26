@@ -365,3 +365,9 @@ Landscape captures and the focused browser regression are linked from the draft 
 kept outside public artifacts. Physical iPhone Safari, live account/cloud mutation and
 production contestant models remain unverified; no native certification or complete
 performance benchmark was rerun for this presentation change.
+
+The private static host limits individual files to 25 MiB. The existing preview
+packager now streams consecutive 20 MiB gzip parts through DecompressionStream when
+needed, rather than reducing approved asset quality. It verifies byte-exact pack/engine
+reconstruction before publication; this adapter does not change Godot's single-threaded
+export or public hosting destinations.
