@@ -18,11 +18,15 @@ var elapsed := 0.0
 var introducing := true
 var shots: Array[Dictionary] = []
 var actions: Dictionary = {}
+var old_max_steps := 8
+var scramble: MarooningScrambleAdapter
 var _capture_callback: JavaScriptObject
 var _frame_usec: int = 0
 var frame_intervals: Array[float] = []
 
 func _ready() -> void:
+    old_max_steps = Engine.max_physics_steps_per_frame
+    Engine.max_physics_steps_per_frame = 120
     # This scene never creates a GameSession, SaveProvider or cloud transport.
     bay = MarooningBay.new()
     add_child(bay)
@@ -37,6 +41,9 @@ func _ready() -> void:
     add_child(cinematic)
     cinematic.current = true
     _hud()
+    scramble = MarooningScrambleAdapter.new()
+    scramble.preview = self
+    add_child(scramble)
     shots = [
         {"eye":Vector3(42, 29, 48), "target":Vector3(0, 9, 0), "text":"Welcome aboard. Eighteen castaways, one new adventure."},
         {"eye":Vector3(8, 12, 15), "target":Vector3(0, layout.deck_y + 1, 0), "text":"Take a look around. These are the people who will share your journey."},
@@ -45,7 +52,7 @@ func _ready() -> void:
     for tribe: Dictionary in configuration.tribes:
         shots.append({"eye":Vector3(12, 13, 14), "target":Vector3(0, 6, 0), "text":"%s · %s · %d castaways" % [tribe.name, tribe.color.capitalize(), tribe.members.size()]})
     shots.append({"eye":Vector3(46, 16, 35), "target":layout.reward, "text":"Later, you will gather supplies and paddle to camp. A single bonus reward will tempt tribes to leave early."})
-    shots.append({"eye":Vector3(-18, 10, 143), "target":layout.landing, "text":"This is an environment preview. Supplies, rafts and rewards are display only. Explore now; your season save is untouched."})
+    shots.append({"eye":Vector3(-18, 10, 143), "target":layout.landing, "text":"Gather what your tribe needs. Load at your tribe’s station before time runs out. Your season save stays untouched."})
     player.locked = true
     touch.cancel()
     if OS.has_feature("web") and bool(JavaScriptBridge.eval("new URLSearchParams(location.search).has('review')")):
@@ -68,13 +75,17 @@ func _cast() -> void:
                 player.water_motion = load("res://world/assets/surface-swimming.res")
                 player.position = point
                 add_child(player)
+                player.floor_block_on_wall = false
                 player.select_controller(true)
                 player.camera.far = 700
                 player.sensitivity = float(preferences.get("sensitivity", 1.0))
                 player.camera_relative_steering = bool(preferences.get("camera_steering", false))
                 actor = player
             else:
-                actor = Actor.new()
+                actor = CampHumanoidMotor.new()
+                actor.collision_layer = 4
+                actor.collision_mask = 1
+                actor.floor_block_on_wall = false
                 actor.position = point
                 add_child(actor)
             actor.set_meta("contestant_id", id)
@@ -120,6 +131,9 @@ func _hud() -> void:
         button.pressed.connect(action[1])
         panel.add_child(button)
         actions[action[0]] = button
+    for key: String in actions:
+        if key.begins_with("Preview only"):
+            actions[key].hide()
     skip = Button.new()
     skip.text = "Skip introduction"
     skip.pressed.connect(finish_intro)
@@ -173,7 +187,7 @@ func finish_intro() -> void:
         player.locked = false
         touch.cancel())
     skip.hide()
-    subtitle.text = "Environment preview · WASD / left thumb: walk · Right drag / right thumb: look\nSupplies and rafts are display only."
+    subtitle.text = "WASD / left thumb: walk · Right drag / right thumb: look\nPress Start Supply Scramble when ready."
 
 func _relocate(point: Vector3) -> void:
     if introducing:
@@ -196,6 +210,10 @@ func inspect_dock() -> void:
 func _notification(what: int) -> void:
     if what in [NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_WM_WINDOW_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED] and is_instance_valid(touch):
         touch.cancel()
+        if is_instance_valid(scramble):
+            scramble.simulation.suspended = true
+    if what in [NOTIFICATION_APPLICATION_FOCUS_IN, NOTIFICATION_WM_WINDOW_FOCUS_IN, NOTIFICATION_APPLICATION_RESUMED] and is_instance_valid(scramble):
+        scramble.simulation.suspended = false
 
 func _exit() -> void:
     touch.cancel()
@@ -203,6 +221,7 @@ func _exit() -> void:
     exited.emit()
 
 func _exit_tree() -> void:
+    Engine.max_physics_steps_per_frame = old_max_steps
     if _capture_callback != null:
         JavaScriptBridge.get_interface("window").marooningView = null
     if is_instance_valid(touch):
@@ -215,13 +234,19 @@ func review_state() -> Dictionary:
         if actions[id].visible:
             var point: Vector2 = actions[id].get_global_rect().get_center() / size
             controls[id] = [point.x, point.y]
+    if is_instance_valid(scramble):
+        for key: String in {"start":scramble.start_button,"interact":scramble.action_button,"drop":scramble.drop_button,"restart":scramble.restart_button}:
+            var control: Button = {"start":scramble.start_button,"interact":scramble.action_button,"drop":scramble.drop_button,"restart":scramble.restart_button}[key]
+            if control.visible:
+                var center := control.get_global_rect().get_center() / size
+                controls[key] = [center.x,center.y]
     var stick := touch.home() / size
     controls["stick"] = [stick.x, stick.y]
     return {"actors":cast.size(), "selected":configuration.selected, "tribes":configuration.tribes.size(),
         "intro":introducing, "locked":player.locked, "x":player.position.x, "y":player.position.y,
         "z":player.position.z, "yaw":player.yaw, "travel":player.travel_distance,
         "move_finger":touch.move_finger, "look_finger":touch.look_finger,
-        "controls":controls, "frame_intervals_ms":frame_intervals}
+        "controls":controls, "frame_intervals_ms":frame_intervals, "scramble_phase":scramble.simulation.phase, "scramble_elapsed":scramble.simulation.elapsed, "events":scramble.simulation.events.size()}
 
 func _capture(arguments: Array) -> void:
     if arguments.is_empty():
@@ -239,3 +264,15 @@ func _capture(arguments: Array) -> void:
         cinematic.position = views[id][0]
         cinematic.look_at(views[id][1])
         cinematic.current = true
+
+func restart_scramble() -> void:
+    Engine.max_physics_steps_per_frame = old_max_steps
+    touch.cancel()
+    for child in get_children():
+        child.free()
+    cast.clear()
+    actions.clear()
+    shots.clear()
+    elapsed = 0
+    introducing = true
+    _ready()

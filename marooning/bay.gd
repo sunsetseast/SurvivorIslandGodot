@@ -36,7 +36,12 @@ func shape(id: String, mesh: Mesh, point: Vector3, surface: Material, solid := f
         var body := StaticBody3D.new()
         node.add_child(body)
         var collider := CollisionShape3D.new()
-        collider.shape = mesh.create_convex_shape()
+        if mesh is BoxMesh:
+            var box_shape := BoxShape3D.new()
+            box_shape.size = mesh.size
+            collider.shape = box_shape
+        else:
+            collider.shape = mesh.create_convex_shape()
         body.add_child(collider)
     return node
 
@@ -184,13 +189,39 @@ func _ship() -> void:
             (node as Node3D).hide()
     mark("ship", layout.ship_origin)
     mark("deck", Vector3(0, layout.deck_y, 0))
-    mark("host", Vector3(0, layout.deck_y + 2.8, -11.8))
+    mark("host", Vector3(1.8, layout.deck_y, -4.5))
     mark("overboard-access", Vector3(4.3, layout.deck_y, 8))
-    # Separate simple collision/visible circulation layer, matched to the adapted deck.
+    # Imported transforms are retained: body/fittings contain walls, masts and hull.
+    # Concave static shapes preserve openings instead of convexly sealing the ship.
+    for part: MeshInstance3D in vessel.find_children("*", "MeshInstance3D", true, false):
+        if part.is_visible_in_tree() and (part.name == "body" or part.name == "fittings"):
+            var faces := part.mesh.get_faces()
+            var filtered := PackedVector3Array()
+            for face in range(0,faces.size(),3):
+                var triangle := PackedVector3Array()
+                for vertex in 3:
+                    triangle.append(part.global_transform * faces[face+vertex])
+                for stair_x: float in [-3,3]:
+                    var remaining := PackedVector3Array()
+                    for index in range(0,triangle.size(),3):
+                        remaining.append_array(cut_stair(PackedVector3Array([triangle[index],triangle[index+1],triangle[index+2]]),AABB(Vector3(stair_x-.65,1.8,-8.4),Vector3(1.3,4.9,3.8))))
+                    triangle = remaining
+                for vertex: Vector3 in triangle:
+                    filtered.append(part.global_transform.affine_inverse() * vertex)
+            var body := StaticBody3D.new()
+            var collision := CollisionShape3D.new()
+            var triangles := ConcavePolygonShape3D.new()
+            triangles.set_faces(filtered)
+            collision.shape = triangles
+            body.add_child(collision)
+            part.add_child(body)
+    # Continuous safety floor beneath all designated cargo circulation areas.
     box("OpenDeck", Vector3(0, layout.deck_y - .13, 1.5), Vector3(8, .26, 16), wood)
     box("HostPlatform", Vector3(0, layout.deck_y + 2.6, -11.5), Vector3(7.6, .4, 4), wood)
-    var ramp := box("HostRamp", Vector3(-2.8, layout.deck_y + 1.35, -6.8), Vector3(1.7, .2, 6), wood)
-    ramp.rotation.x = .49
+    for stair_x: float in [-3.0,3.0]:
+        var ramp := box("StairCollisionRamp",Vector3(stair_x,3.43,-5.75),Vector3(1.05,.16,6.0),wood)
+        ramp.rotation.x = atan2(3.1,5.1)
+        ramp.hide() # Imported steps remain the visible architecture.
     for x: float in [-4.0, 4.0]:
         box("DeckRail", Vector3(x, layout.deck_y + .6, .2), Vector3(.12, 1.2, 13.4), wood)
     var mast := StaticBody3D.new()
@@ -206,16 +237,36 @@ func _ship() -> void:
     box("BowSafetyRail", Vector3(0, layout.deck_y + .6, 9.5), Vector3(8, 1.2, .12), wood)
     for i in 3:
         mark("spawn-group-%d" % i, Vector3(-2.4 + i * 2.4, layout.deck_y, 2))
+    # Retain semantic legacy anchors for downstream tools, without solid cargo props.
     for i in 6:
-        var point := Vector3(3.25, layout.deck_y + .4, -4 + i * 1.5)
-        var id: String = ["rice-sack", "crate", "rope", "basket", "cooking-pot", "survival-kit"][i]
-        mark("cargo-" + id, point)
-        if id in ["rice-sack", "basket", "cooking-pot"]:
-            pole(id, point, .35, .8, bamboo if id != "cooking-pot" else material(Color("414748")), true)
-        elif id == "rope":
-            var torus := TorusMesh.new()
-            torus.inner_radius = .23
-            torus.outer_radius = .4
-            shape(id, torus, point, bamboo)
-        else:
-            box(id, point, Vector3(.8, .8, .8), bamboo)
+        mark("cargo-" + ["rice-sack","crate","rope","basket","cooking-pot","survival-kit"][i], Vector3(3.0,layout.deck_y,-4+i*1.5))
+
+func cut_stair(triangle: PackedVector3Array, bounds: AABB) -> PackedVector3Array:
+    # Subtract only the stair corridor from broad imported wall/rail triangles.
+    var inside := triangle
+    var output := PackedVector3Array()
+    for plane in 6:
+        if inside.is_empty():
+            break
+        var axis := plane / 2
+        var lower := plane % 2 == 0
+        var limit: float = bounds.position[axis] if lower else bounds.end[axis]
+        var keep := PackedVector3Array()
+        var outside := PackedVector3Array()
+        for i in inside.size():
+            var a := inside[i]
+            var b := inside[(i+1)%inside.size()]
+            var ai: bool = a[axis] >= limit if lower else a[axis] <= limit
+            var bi: bool = b[axis] >= limit if lower else b[axis] <= limit
+            if ai:
+                keep.append(a)
+            else:
+                outside.append(a)
+            if ai != bi:
+                var point := a.lerp(b,(limit-a[axis])/(b[axis]-a[axis]))
+                keep.append(point)
+                outside.append(point)
+        for i in range(1,outside.size()-1):
+            output.append_array(PackedVector3Array([outside[0],outside[i],outside[i+1]]))
+        inside = keep
+    return output
