@@ -459,9 +459,9 @@ older navigation assumption: its technical-season Credits button was below the
 visible scroll panel (normalized Y about 1.89). The browser helper now reveals Credits
 actions with touch swipes before tapping. Product UI and gameplay remain unchanged.
 
-### Phase 4C.1 configurable cloud compatibility (pending Supabase confirmation)
+### Phase 4C.1 configurable cloud compatibility
 
-The additive migration `20261126030136_configurable_cloud_v1.sql` keeps the technical
+The additive migration `20261126083432_configurable_cloud_v1.sql` keeps the technical
 validator unchanged and dispatches configurable v1 snapshots to their own validator.
 The server-owned `survivor_private.gameplay_catalogs` table binds exact canonical
 Godot gameplay JSON to its `gameplay-v1` fingerprint. It has RLS, a restrictive deny
@@ -498,17 +498,22 @@ local guest preservation and occupied-slot protection against the privately stag
 fixtures. Existing Phase 4C/local compatibility gates remain applicable.
 
 Deployment target is exclusively `survivor-island-dev`, reference
-`hjmhgibfbxgzqvfdomoj`. Merged PR #13 was verified on main at `ddb9d1c2f008394685c4a4b12b518bbe85e574b1`. Apply the public additive
-migration to this target, provision the private catalog through an administrative DML
-channel, run the rollback-only checks against the real development Auth/RPC contract,
-and verify migration history, catalog fingerprint/count and unchanged permissions.
-Only then publish the private account-enabled preview. Never query or alter Passport.
-No hosted migration or preview publication has been performed for this prepared draft.
+`hjmhgibfbxgzqvfdomoj`. Merged PR #13 was verified on main at
+`ddb9d1c2f008394685c4a4b12b518bbe85e574b1`. After explicit user approval, the
+additive migration was applied and verified in hosted migration history as
+`20261126083432` / `configurable_cloud_v1`. The public filename matches that recorded
+version. The privately provisioned catalog contains exactly 18 approved contestants
+and fingerprint `gameplay-v1:3b8c699247b5a997dfe0ed15dc23bddf446e99c7c63f1262ba42dca294373804`.
+Catalog RLS is enabled; authenticated table SELECT and direct private-validator
+EXECUTE are denied. The same 39 rollback-only RPC checks passed against the real
+development Auth/session/RPC contract; all test accounts, sessions and saves were
+rolled back. The configurable client gate and existing Phase 4C/local-save compatibility
+gates also passed locally. Restricted catalog and generated test SQL remain ignored.
 
-Local final validation passed 39 rollback-only RPC checks, the configurable cloud
-client gate, and existing Phase 4C/local-save compatibility checks. The live migration
-was not applied: the Supabase migration tool returned an expired confirmation.
-Publishing the account-enabled preview remains gated on confirmed application and
-verification of the development database migration and private catalog. Existing
-security advisories (multiplayer recovery deny-by-default RLS and disabled leaked
-password protection) predate this change; no multiplayer or paid Auth settings changed.
+The private preview uses the existing owner-only Phase 4C HTTPS destination. No
+Passport project, Render service, multiplayer deployment, artwork or gameplay system
+was changed. Security advisors reported no new findings: the existing multiplayer
+recovery RLS/no-policy info and disabled leaked-password-protection warning predate
+this assignment and remain unchanged. Reference remediation guidance:
+[RLS policy advisor](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy)
+and [password protection](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection).
