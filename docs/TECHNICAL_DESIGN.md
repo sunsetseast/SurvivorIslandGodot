@@ -458,3 +458,57 @@ After the Docker gate passed, the previously unreachable Web regression exposed 
 older navigation assumption: its technical-season Credits button was below the
 visible scroll panel (normalized Y about 1.89). The browser helper now reveals Credits
 actions with touch swipes before tapping. Product UI and gameplay remain unchanged.
+
+### Phase 4C.1 configurable cloud compatibility (pending Supabase confirmation)
+
+The additive migration `20261126030136_configurable_cloud_v1.sql` keeps the technical
+validator unchanged and dispatches configurable v1 snapshots to their own validator.
+The server-owned `survivor_private.gameplay_catalogs` table binds exact canonical
+Godot gameplay JSON to its `gameplay-v1` fingerprint. It has RLS, a restrictive deny
+policy, no client/service-role table grants, and no client registration endpoint.
+No contestant data is included in the public migration. `tools/cloud/stage_configurable.gd`
+requires an explicit private approved catalog, verifies its approved fingerprint, and
+writes the private seed and fixture snapshots only to an ignored `build/private-cloud`
+directory; public Actions staging is prohibited. Artwork metadata is never stored in
+the server catalog or used for compatibility.
+
+The configurable validator checks checksum/envelope bounds, canonical integer RNG
+text, approved attributes/defaults, exact 18-member ownership and tribe capacities,
+seed/configuration, identities/colors/themes, canonical membership order, logical
+tribe/location mapping, camp state, participant journals and bounded Tonsai pose.
+The RPC preserves the existing verified-session guard, per-account locks and isolation,
+quotas, revision conflicts, operation idempotency and revision retention. Updates to
+configurable seasons additionally freeze confirmed configuration, seed and principal.
+Legacy clients and technical snapshots retain their existing validation and RPC shape.
+
+Clients enable both supported v1 rulesets for account creation/scheduling/conflict
+resolution and explicit guest import. The existing empty-slot and deletion checks
+remain in place; imports preserve the guest checkpoint and its simulation principal
+inside the account's separately authorized save row. Account and guest stores are not
+silently switched or combined. Cloud/local restores still require SaveCodec validation.
+
+Local validation: use a disposable PostgreSQL 17 database with the existing Auth
+uid/JWT/session contract, install migrations in order, then provision the private catalog.
+`supabase/tests/configurable_rpc.py PRIVATE_STAGE IGNORED_SQL_PATH` generates rollback-only
+SQL for 39 focused checks covering configurable 2/3-tribe and technical round trips,
+guest import, malformed snapshots/types, confirmed configuration, isolation, conflicts
+and quotas. Test identities and saves are rolled back; no verification emails are sent.
+`tests/configurable_cloud_test.gd` verifies account import intent, supported rulesets,
+local guest preservation and occupied-slot protection against the privately staged
+fixtures. Existing Phase 4C/local compatibility gates remain applicable.
+
+Deployment target is exclusively `survivor-island-dev`, reference
+`hjmhgibfbxgzqvfdomoj`. Merged PR #13 was verified on main at `ddb9d1c2f008394685c4a4b12b518bbe85e574b1`. Apply the public additive
+migration to this target, provision the private catalog through an administrative DML
+channel, run the rollback-only checks against the real development Auth/RPC contract,
+and verify migration history, catalog fingerprint/count and unchanged permissions.
+Only then publish the private account-enabled preview. Never query or alter Passport.
+No hosted migration or preview publication has been performed for this prepared draft.
+
+Local final validation passed 39 rollback-only RPC checks, the configurable cloud
+client gate, and existing Phase 4C/local-save compatibility checks. The live migration
+was not applied: the Supabase migration tool returned an expired confirmation.
+Publishing the account-enabled preview remains gated on confirmed application and
+verification of the development database migration and private catalog. Existing
+security advisories (multiplayer recovery deny-by-default RLS and disabled leaked
+password protection) predate this change; no multiplayer or paid Auth settings changed.

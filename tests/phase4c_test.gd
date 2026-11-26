@@ -76,7 +76,7 @@ func _initialize() -> void:
     var technical := SeasonSimulation.new("a".repeat(32), "c".repeat(32), 1)
     check(SaveCodec.decode(SaveCodec.encode(technical.snapshot(), 1, 100)).status == "valid", "Technical compatibility")
     var cloud := SurvivorCloudSaveService.new(null)
-    check(not cloud.mark_guest_import(1, {"ruleset":SurvivorSeasonConfiguration.RULESET}), "No configurable account import")
+    check(not cloud.mark_guest_import(1, {"ruleset":SurvivorSeasonConfiguration.RULESET}), "No import without an account store")
     cloud.free()
     print("PHASE 4C failures: ", failures)
     quit(1 if failures else 0)
