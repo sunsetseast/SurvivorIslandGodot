@@ -458,3 +458,62 @@ After the Docker gate passed, the previously unreachable Web regression exposed 
 older navigation assumption: its technical-season Credits button was below the
 visible scroll panel (normalized Y about 1.89). The browser helper now reveals Credits
 actions with touch swipes before tapping. Product UI and gameplay remain unchanged.
+
+### Phase 4C.1 configurable cloud compatibility
+
+The additive migration `20261126083432_configurable_cloud_v1.sql` keeps the technical
+validator unchanged and dispatches configurable v1 snapshots to their own validator.
+The server-owned `survivor_private.gameplay_catalogs` table binds exact canonical
+Godot gameplay JSON to its `gameplay-v1` fingerprint. It has RLS, a restrictive deny
+policy, no client/service-role table grants, and no client registration endpoint.
+No contestant data is included in the public migration. `tools/cloud/stage_configurable.gd`
+requires an explicit private approved catalog, verifies its approved fingerprint, and
+writes the private seed and fixture snapshots only to an ignored `build/private-cloud`
+directory; public Actions staging is prohibited. Artwork metadata is never stored in
+the server catalog or used for compatibility.
+
+The configurable validator checks checksum/envelope bounds, canonical integer RNG
+text, approved attributes/defaults, exact 18-member ownership and tribe capacities,
+seed/configuration, identities/colors/themes, canonical membership order, logical
+tribe/location mapping, camp state, participant journals and bounded Tonsai pose.
+The RPC preserves the existing verified-session guard, per-account locks and isolation,
+quotas, revision conflicts, operation idempotency and revision retention. Updates to
+configurable seasons additionally freeze confirmed configuration, seed and principal.
+Legacy clients and technical snapshots retain their existing validation and RPC shape.
+
+Clients enable both supported v1 rulesets for account creation/scheduling/conflict
+resolution and explicit guest import. The existing empty-slot and deletion checks
+remain in place; imports preserve the guest checkpoint and its simulation principal
+inside the account's separately authorized save row. Account and guest stores are not
+silently switched or combined. Cloud/local restores still require SaveCodec validation.
+
+Local validation: use a disposable PostgreSQL 17 database with the existing Auth
+uid/JWT/session contract, install migrations in order, then provision the private catalog.
+`supabase/tests/configurable_rpc.py PRIVATE_STAGE IGNORED_SQL_PATH` generates rollback-only
+SQL for 39 focused checks covering configurable 2/3-tribe and technical round trips,
+guest import, malformed snapshots/types, confirmed configuration, isolation, conflicts
+and quotas. Test identities and saves are rolled back; no verification emails are sent.
+`tests/configurable_cloud_test.gd` verifies account import intent, supported rulesets,
+local guest preservation and occupied-slot protection against the privately staged
+fixtures. Existing Phase 4C/local compatibility gates remain applicable.
+
+Deployment target is exclusively `survivor-island-dev`, reference
+`hjmhgibfbxgzqvfdomoj`. Merged PR #13 was verified on main at
+`ddb9d1c2f008394685c4a4b12b518bbe85e574b1`. After explicit user approval, the
+additive migration was applied and verified in hosted migration history as
+`20261126083432` / `configurable_cloud_v1`. The public filename matches that recorded
+version. The privately provisioned catalog contains exactly 18 approved contestants
+and fingerprint `gameplay-v1:3b8c699247b5a997dfe0ed15dc23bddf446e99c7c63f1262ba42dca294373804`.
+Catalog RLS is enabled; authenticated table SELECT and direct private-validator
+EXECUTE are denied. The same 39 rollback-only RPC checks passed against the real
+development Auth/session/RPC contract; all test accounts, sessions and saves were
+rolled back. The configurable client gate and existing Phase 4C/local-save compatibility
+gates also passed locally. Restricted catalog and generated test SQL remain ignored.
+
+The private preview uses the existing owner-only Phase 4C HTTPS destination. No
+Passport project, Render service, multiplayer deployment, artwork or gameplay system
+was changed. Security advisors reported no new findings: the existing multiplayer
+recovery RLS/no-policy info and disabled leaked-password-protection warning predate
+this assignment and remain unchanged. Reference remediation guidance:
+[RLS policy advisor](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy)
+and [password protection](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection).

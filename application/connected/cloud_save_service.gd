@@ -72,7 +72,7 @@ func slot_status(index: int, entry: Dictionary) -> String:
 func schedule(slot: int, immediate := false) -> void:
     if saves != null:
         var entry := saves.inspect(slot)
-        if entry.status == "valid" and entry.state.ruleset != SeasonSimulation.RULESET:
+        if entry.status == "valid" and not supports_state(entry.state):
             return
     if store == null:
         return
@@ -115,7 +115,7 @@ func reset(slot: int) -> bool:
     return store == null or write_record(slot, {})
 
 func mark_guest_import(slot: int, state: Dictionary) -> bool:
-    if state.get("ruleset") != SeasonSimulation.RULESET:
+    if store == null or not supports_state(state):
         return false
     if not write_record(slot, {"season": state.season_id, "guest_import": true}):
         return false
@@ -177,7 +177,7 @@ func resolve(slot: int, choice: String, confirmed_revision: int) -> String:
     if choice == "cloud":
         return await restore(slot, String(sync.get("id", "")), confirmed_revision, true)
     var local := saves.inspect(slot)
-    if local.status != "valid" or local.state.ruleset != SeasonSimulation.RULESET:
+    if local.status != "valid" or not supports_state(local.state):
         return "invalid_snapshot"
     if choice == "local" and confirmed_revision > 0:
         sync = {"id": sync.id, "season": local.state.season_id, "revision": confirmed_revision}
@@ -225,7 +225,7 @@ func _sync_slot(slot: int) -> void:
     var epoch := auth.epoch
     var sync := record(slot)
     var local := saves.inspect(slot)
-    if local.status != "valid" or local.state.ruleset != SeasonSimulation.RULESET:
+    if local.status != "valid" or not supports_state(local.state):
         _busy = false
         return
     if sync.get("season") != local.state.season_id:
@@ -301,3 +301,6 @@ func _uuid() -> String:
     var hex := bytes.hex_encode()
     return "%s-%s-%s-%s-%s" % [hex.left(8), hex.substr(8, 4), hex.substr(12, 4),
         hex.substr(16, 4), hex.right(12)]
+
+static func supports_state(state: Dictionary) -> bool:
+    return state.get("ruleset") in [SeasonSimulation.RULESET, SurvivorSeasonConfiguration.RULESET] and state.get("ruleset_version") == 1

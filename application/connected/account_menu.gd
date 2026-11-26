@@ -333,11 +333,11 @@ func _delete_cloud(row: Dictionary) -> void:
     _list(message(result))
 
 func _imports() -> void:
-    _page("import", "Import a Guest Season", "Choose a technical season from this browser. Configurable seasons remain local to guest mode; cloud sync is not available yet.")
+    _page("import", "Import a Guest Season", "Choose a season from this browser. Its guest checkpoint will stay here.")
     var guest := LocalSaveProvider.new(_app.identity.guest_store)
     for slot in range(1, LocalSaveProvider.SLOTS + 1):
         var value := guest.inspect(slot)
-        if value.status == "valid" and value.state.player_id == _app.profile.guest_id and value.state.ruleset == SeasonSimulation.RULESET:
+        if value.status == "valid" and value.state.player_id == _app.profile.guest_id and SurvivorCloudSaveService.supports_state(value.state):
             _button("guest%d" % slot, "Guest slot %d · %s" % [slot, _metadata(value.state)],
                 _destinations.bind({}, 0, slot))
     _button("back", "Back", _dashboard)
@@ -361,9 +361,9 @@ func _import_slot(guest_slot: int, slot: int) -> void:
         _working = false
         _app._status.text = "The guest checkpoint is unavailable."
         return
-    if guest.state.ruleset != SeasonSimulation.RULESET:
+    if not SurvivorCloudSaveService.supports_state(guest.state):
         _working = false
-        _app._status.text = "Configurable seasons remain in guest/local mode. Cloud synchronization is not available yet."
+        _app._status.text = "This season ruleset is not supported for cloud saves."
         return
     for index in range(1, LocalSaveProvider.SLOTS + 1):
         var existing := _app.saves.inspect(index)

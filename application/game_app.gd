@@ -466,8 +466,8 @@ func _new(index: int) -> void:
         _status.text = "Local storage is unavailable."
         return
     var config := division.configuration(contestant_catalog, selection_setup) if _configured else {}
-    if _configured and (config.is_empty() or cloud.store != null):
-        _status.text = "Invalid configuration or account mode. Configurable seasons require guest/local mode."
+    if _configured and config.is_empty():
+        _status.text = "Invalid season configuration."
         return
     var sim := SeasonSimulation.new(principal, GameStateData.new_id(), int(config.seed) if _configured else randi())
     if _configured:
@@ -761,9 +761,7 @@ func _layout_menus() -> void:
 
 func _season_paths() -> void:
     _configured = true
-    _menu(Screen.NEW_GAME, "Create Your Season", "Configurable seasons use guest/local saves. Cloud synchronization is not available yet.")
-    if cloud.store != null:
-        _status.text += "\nReturn to Account and explicitly choose guest mode to create a season."
+    _menu(Screen.NEW_GAME, "Create Your Season", _season_storage_message())
     _button("standard", "Standard", _standard_formats)
     _button("custom", "Custom", _custom_options)
     _button("back", "Back to Survivor", _new_game)
@@ -807,7 +805,7 @@ func _reroll() -> void:
     _tribe_review()
 
 func _tribe_review() -> void:
-    _menu(Screen.NEW_GAME, "Confirm Starting Tribes", "Seed %d · %s\n%s\nGuest/local only · Cloud sync unavailable" % [division.seed_value, division.method, "Tap two contestants in different tribes to swap." if division.method == "Manual" else "Review the complete starting roster."])
+    _menu(Screen.NEW_GAME, "Confirm Starting Tribes", "Seed %d · %s\n%s\n%s" % [division.seed_value, division.method, "Tap two contestants in different tribes to swap." if division.method == "Manual" else "Review the complete starting roster.", _season_storage_message()])
     var columns := HBoxContainer.new()
     _stack.add_child(columns)
     for i in division.tribes.size():
@@ -842,7 +840,7 @@ func _tribe_review() -> void:
     if division.method in ["Random", "Balanced"]:
         _button("reroll", "Reroll", _reroll)
     var confirm := _button("confirm", "Confirm Season · Choose Empty Slot", _confirm_season)
-    confirm.disabled = cloud.store != null or division.configuration(contestant_catalog, selection_setup).is_empty()
+    confirm.disabled = division.configuration(contestant_catalog, selection_setup).is_empty()
     _button("back", "Back to Configuration", _custom_options)
 
     _update_account_layout()
@@ -872,5 +870,8 @@ func _manual_tap(tribe: int, member: int) -> void:
     _tribe_review()
 
 func _confirm_season() -> void:
-    if cloud.store == null and not division.configuration(contestant_catalog, selection_setup).is_empty():
+    if not division.configuration(contestant_catalog, selection_setup).is_empty():
         _slots(true)
+
+func _season_storage_message() -> String:
+    return "Account season · Local checkpoints and cloud synchronization" if cloud.store != null else "Guest season · Saved locally. Sign in and explicitly import to sync."
