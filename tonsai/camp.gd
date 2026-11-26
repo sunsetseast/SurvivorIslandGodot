@@ -124,6 +124,7 @@ func _spawn_cast() -> void:
     player.process_priority = -1
     player.select_controller(true)
     var view := session.view(LOCATION)
+    player.name = view.cast[view.controlled].name
     if remote != null:
         var initial := remote.movement(view.controlled)
         player.remote = remote
@@ -140,7 +141,8 @@ func _spawn_cast() -> void:
     # Initial formation is presentation data. The assigned camp roster comes from the session.
     var entries := [
         Vector3(-7.4, 4.8, -25.9), Vector3(.2, 1.3, -30), Vector3(-22, .2, -27.8),
-        Vector3(11.5, 2.5, -31), Vector3(-5, 3.1, -34),
+        Vector3(11.5, 2.5, -31), Vector3(-5, 3.1, -34), Vector3(-13, 1.8, -27),
+        Vector3(-17, 2.2, -30), Vector3(-2, 3.4, -25),
     ]
     for id: String in view.cast:
         if id == view.controlled:
@@ -196,7 +198,7 @@ func _valid_point(point: Vector3) -> bool:
         and point.y >= site.height(point.x, point.z) - .35
 
 func _talk_action(kind: String, target: String, topic := "") -> Dictionary:
-    return session.submit({"id": GameStateData.new_id(), "actor": SeasonCatalog.CONTROLLED,
+    return session.submit({"id": GameStateData.new_id(), "actor": session.view(LOCATION).controlled,
         "kind": kind, "target": target, "topic": topic})
 
 func remember_preference(key: String, value: Variant) -> void:
@@ -305,7 +307,7 @@ func _process(delta: float) -> void:
     var draws := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME)
     var primitives := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME)
     var day: int = local_host.current_day() if local_host != null else int(session.view(LOCATION).get("day", 1))
-    hud.stats.text = "Day %d   ·   %d FPS   ·   %d rigs" % [day, fps, inhabitants.size() + 1]
+    hud.stats.text = "%s · Day %d · %d FPS" % [session.view(LOCATION).cast[session.view(LOCATION).controlled].name, day, fps]
     for npc in inhabitants:
         # Distant actors keep their physical schedules. Only skeletal
         # evaluation sleeps when nobody can read the pose.

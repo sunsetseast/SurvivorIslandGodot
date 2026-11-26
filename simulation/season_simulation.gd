@@ -9,6 +9,7 @@ const TICKS_PER_DAY := 2400
 const MAX_TICK := 1_000_000_000
 const REACH := 2.65
 
+var configuration: Dictionary = {}
 var season_id: String
 var player_id: String
 var roster: Dictionary
@@ -132,14 +133,19 @@ func snapshot() -> Dictionary:
     var world := {}
     for location: String in camps:
         world[location] = camps[location].snapshot()
-    return {"season_id": season_id, "player_id": player_id, "ruleset": RULESET,
+    var result := {"season_id": season_id, "player_id": player_id, "ruleset": RULESET if configuration.is_empty() else SurvivorSeasonConfiguration.RULESET,
         "ruleset_version": RULESET_VERSION, "revision": revision, "tick": tick, "day": day(),
         "phase": "camp", "seed": str(rng.seed), "rng_state": str(rng.state),
-        "controlled": SeasonCatalog.CONTROLLED, "roster": roster.duplicate(true),
-        "tribes": SeasonCatalog.TRIBES.duplicate(), "world": world, "pose": pose.duplicate(true)}
+        "controlled": contestant_for(player_id), "roster": roster.duplicate(true),
+        "tribes": tribe_locations(), "world": world, "pose": pose.duplicate(true)}
+    if not configuration.is_empty():
+        result["configuration"] = configuration.duplicate(true)
+    return result
 
 static func restore(data: Dictionary) -> SeasonSimulation:
     var sim := SeasonSimulation.new(data.player_id, data.season_id, int(data.seed))
+    if data.get("ruleset") == SurvivorSeasonConfiguration.RULESET:
+        sim.configure(data.configuration, SurvivorContestantCatalog.new())
     # Keep the ruleset's canonical roster order across JSON encoders and migrations.
     for id: String in sim.roster:
         sim.roster[id] = data.roster[id].duplicate(true)
@@ -150,3 +156,20 @@ static func restore(data: Dictionary) -> SeasonSimulation:
     for location: String in sim.camps:
         sim.camps[location].restore(data.world[location])
     return sim
+
+func tribe_locations() -> Dictionary:
+    if configuration.is_empty():
+        return SeasonCatalog.TRIBES.duplicate()
+    var result := {}
+    for tribe: Dictionary in configuration.tribes:
+        result[tribe.id] = tribe.location
+    return result
+
+func configure(config: Dictionary, catalog: SurvivorContestantCatalog) -> void:
+    configuration = config.duplicate(true)
+    roster = SurvivorSeasonConfiguration.roster_for(config, catalog, player_id)
+    camps.clear()
+    for tribe: Dictionary in config.tribes:
+        camps[tribe.location] = CampSimulation.new()
+    for id: String in roster:
+        camps[roster[id].location].add(id, "")

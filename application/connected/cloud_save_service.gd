@@ -70,6 +70,10 @@ func slot_status(index: int, entry: Dictionary) -> String:
     return "Sync pending"
 
 func schedule(slot: int, immediate := false) -> void:
+    if saves != null:
+        var entry := saves.inspect(slot)
+        if entry.status == "valid" and entry.state.ruleset != SeasonSimulation.RULESET:
+            return
     if store == null:
         return
     var now := Time.get_ticks_msec()

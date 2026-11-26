@@ -381,3 +381,42 @@ regression cycles all filter combinations repeatedly and changes mode using actu
 taps, without keyboard input. Selection tooltips are removed. Valid portraits have
 no unavailable overlay; absent portraits/models retain the error state and the
 isolated 3D preview architecture is unchanged.
+
+### Phase 4C configurable local seasons
+
+`SurvivorSeasonConfiguration` owns transient seeded division and exact membership
+validation. Ordinary Standard formats use balanced assignment; Random is Fisher–Yates;
+Balanced accepts improving equal-capacity swaps for at most 600 attempts, minimizing
+pairwise gender and Physical/Mental/Social total variance. Themed labels remain separate
+from tribe names. Manual uses two taps to swap. Confirm then an empty slot is the only
+creation boundary. No catalog rating or default is recalibrated.
+
+`configurable-single-player` v1 persists the catalog fingerprint, seed, selected original
+ID, information preference, named/color tribes and their confirmed membership/locations.
+Roster attributes and copied mutable starting state are separate. The selected logical
+tribe occupies Tonsai; other tribes simulate independently offscreen. The existing rig
+is temporary. Additional spawn positions serve nine-person tribes. The technical
+ruleset and wire protocol retain their versions. SaveCodec dispatches validation by
+ruleset and normalizes whole JSON numbers before configurable validation. Restoration
+rebuilds catalog order before restoring camp state and deterministic RNG. Current v1
+requires catalog defaults for mutable fields because this phase does not change them;
+future mechanics must version their transition validation.
+
+Configurable creation requires explicit guest mode. It neither signs out an account nor
+moves its saves. Cloud scheduling rejects unsupported rulesets. Follow-up: introduce a
+server-owned, immutable approved catalog/fingerprint and a separate configurable v1
+validator in the hosted save RPC; validate complete membership, controller ownership,
+locations, participant journals, pose and RNG against it; retain technical v1 dispatch
+and existing account namespace/revision/conflict checks. Add server/client cross-codec
+fixtures before enabling account creation or configurable uploads. No hosted migration,
+service or multiplayer deployment is included here. Future ruleset versions may implement
+merge at 12, Final Three, swaps, idols and advantages; none are selectable now.
+
+Targeted checks: stage private inputs with the existing Phase 4B helper, then run
+`tests/phase4c_test.gd` and `tests/phase4c_camp_test.gd` in the Tonsai stage. The former
+covers representative seeds, themed formats, manual swap/rejection, exact attributes,
+6/9 projections, codec restore and deterministic continuation, plus technical saves.
+The latter loads both actual camp sizes and verifies spawn clearance, conversations,
+selected participant journals and saved pose. Keep private captures and catalogs out
+of public Git and Actions artifacts. Mobile Chromium emulation is a regression aid;
+physical iPhone Safari still requires device review.

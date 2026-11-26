@@ -270,8 +270,8 @@ func confirm_selection() -> void:
     _clear(_details)
     _info_scroll.scroll_vertical = 0
     _details.add_child(_label(entry.name, true, 26))
-    _details.add_child(_label("Ready for Phase 4C", true, 22))
-    _details.add_child(_label("Catalog ID · %d\nInformation · %s\n\nSelection retained for season configuration. Custom season creation is not implemented yet. No season or save has been created." % [setup.selected_id, setup.information_mode]))
+    _details.add_child(_label("Ready to configure your season", true, 22))
+    _details.add_child(_label("Catalog ID · %d\nInformation · %s\n\nSelection retained for season configuration. No season or save has been created." % [setup.selected_id, setup.information_mode]))
     _button("inspect", "INSPECT ATTRIBUTES", _show_selected, _details)
     confirmed.emit()
 

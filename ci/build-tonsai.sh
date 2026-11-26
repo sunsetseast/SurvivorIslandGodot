@@ -27,7 +27,7 @@ mkdir -p "$stage/tonsai/shaders" "$stage/tonsai/generated"
 cp tonsai/*.gd tonsai/*.tscn "$stage/tonsai/"
 cp tonsai/shaders/*.gdshader "$stage/tonsai/shaders/"
 cp tools/tonsai/bake_nav.gd tools/tonsai/bake_server_collision.gd "$stage/tools/tonsai/"
-cp tests/tonsai_test.gd tests/application_test.gd tests/credential_test.gd tests/benchmark_test.gd tests/title_test.gd tests/selection_test.gd "$stage/tests/"
+cp tests/phase4c_test.gd tests/phase4c_camp_test.gd tests/tonsai_test.gd tests/application_test.gd tests/credential_test.gd tests/benchmark_test.gd tests/title_test.gd tests/selection_test.gd "$stage/tests/"
 cp character_lab/actor.gd "$stage/character_lab/"
 cp character_lab/assets/maeve.glb "$stage/character_lab/assets/"
 cp icon.svg "$stage/" 2>/dev/null || true
