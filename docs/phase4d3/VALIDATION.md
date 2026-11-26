@@ -72,6 +72,8 @@ on Cloud software rendering. These are NOT iPhone performance measurements.
 A later concurrent screenshot attempt timed out after 30 seconds; the harness now
 allows a longer capture timeout. No physical iPhone or Safari test is claimed.
 
+An additional browser pilot physically walked off the bow, swam around the ship and raft, boarded by touch and used Paddle. Actual timing UI captures were taken at 956×440 and 812×375, plus loaded nine-crew raft side/overhead and competing-raft views. That older export reproduced the shore congestion defect before the later native fix; it is not a final browser-arrival pass. Screenshot inspection also caught clipped bottom controls. The final panel grows upward, uses larger touch targets, and contextual scramble actions occupy the lower right. `tests/race_ui_test.gd` checks all these action rectangles at both landscape sizes with zero failures. The complete requested screenshot matrix remains outstanding.
+
 Cloud status advertises HTTP port 3000 but returns no HTTPS URL. Automatic approval
 review rejected binding the restricted build to 0.0.0.0 because owner-only access
 was unverified. A safer loopback-only server is running for automated browser

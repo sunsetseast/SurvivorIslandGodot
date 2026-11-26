@@ -40,6 +40,8 @@ func _ready() -> void:
     panel = VBoxContainer.new()
     panel.theme = IslandTheme.create()
     panel.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+    panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+    panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
     panel.offset_left = -260
     panel.offset_top = -250
     panel.offset_right = -15
@@ -57,6 +59,7 @@ func _ready() -> void:
     meter.custom_minimum_size = Vector2(220,28)
     panel.add_child(meter)
     paddle = button("Paddle",func() -> void: simulation.stroke(selected()))
+    paddle.custom_minimum_size.y = 80
     board = button("Board Raft · climb",func() -> void: simulation.request_board(selected(),access(selected(),"board")))
     rest = button("Stop Paddling",toggle_rest)
     jump = button("Jump Off",jump_off)
@@ -68,7 +71,7 @@ func selected() -> int:
 func button(text: String, callback: Callable) -> Button:
     var control := Button.new()
     control.text = text
-    control.custom_minimum_size.y = 44
+    control.custom_minimum_size.y = 64
     control.pressed.connect(callback)
     panel.add_child(control)
     return control

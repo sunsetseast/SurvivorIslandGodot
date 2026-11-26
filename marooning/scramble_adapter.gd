@@ -84,6 +84,15 @@ func button(parent: Node, text: String, action: Callable) -> Button:
     control.text = text
     control.pressed.connect(action)
     parent.add_child(control)
+    if text in ["Pick Up","Drop","Steal"]:
+        control.reparent(parent.get_parent())
+        control.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+        control.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+        control.custom_minimum_size.y = 64
+        control.offset_left = -270
+        control.offset_right = -18
+        control.offset_top = {"Pick Up":-158,"Drop":-84,"Steal":-232}[text]
+        control.offset_bottom = {"Pick Up":-92,"Drop":-18,"Steal":-166}[text]
     return control
 
 func start() -> void:
