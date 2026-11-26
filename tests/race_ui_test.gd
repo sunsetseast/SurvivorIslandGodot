@@ -32,6 +32,15 @@ func run() -> void:
                 failures += 1
                 printerr("FAIL: ",viewport_size," clipped ",button.text," ",button.get_global_rect()," bounds ",bounds)
         print("Race UI bounds checked ",viewport_size)
+    var actor_tribe: String = actor.tribe
+    for type: String in preview.scramble.simulation.definitions:
+        preview.race.simulation.scramble_result.secured[actor_tribe].append({"type":type})
+    preview.race.finish()
+    for frame in 5:
+        await process_frame
+    if not preview.get_viewport().get_visible_rect().encloses(preview.subtitle.get_global_rect()):
+        failures += 1
+        printerr("FAIL: Full equipment and personal contribution summary clipped")
     preview.queue_free()
     await process_frame
     print("Race UI: ",failures," failures")

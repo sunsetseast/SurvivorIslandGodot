@@ -287,4 +287,6 @@ func finish() -> void:
     var supply_stats: Dictionary = simulation.scramble_result.contributions[selected()]
     text += "\nYou: %d loads · %d successful thefts · %d failed thefts" % [supply_stats.get("load_success",0),supply_stats.get("steal_success",0),supply_stats.get("steal_failed",0)]
     text += "\nFishing reward: %s · You: %d strokes (%d Perfect), %.0fm swimming" % ["won" if simulation.reward.tribe == own else "not won",actor.strokes,actor.perfect,actor.swim_distance]
+    preview.subtitle.grow_vertical = Control.GROW_DIRECTION_BEGIN
+    preview.subtitle.offset_top = -270
     preview.subtitle.text = text
