@@ -9,6 +9,7 @@ var seed_value: int = 1
 var count: int = 2
 var method: String = "Balanced"
 var tribes: Array = []
+var _ratings: Dictionary = {}
 
 static func fingerprint(catalog: SurvivorContestantCatalog) -> String:
     return JSON.stringify(catalog.all(), "", true).sha256_text()
@@ -18,10 +19,18 @@ func assign(catalog: SurvivorContestantCatalog) -> void:
         count = 3
     elif method == "Battle of the Sexes":
         count = 2
+    var identities := tribes.duplicate(true)
     tribes.clear()
     for i in count:
         tribes.append({"id":"tribe-%d" % (i + 1), "name":NAMES[i], "color":["red", "blue", "green"][i], "label":"", "members":[]})
+    if identities.size() == count:
+        for i in count:
+            tribes[i].name = identities[i].name
+            tribes[i].color = identities[i].color
     var entries := catalog.all()
+    _ratings.clear()
+    for entry: Dictionary in entries:
+        _ratings[int(entry.id)] = [50.0 if entry.gender == "male" else 0.0, float(entry.totals.Physical), float(entry.totals.Mental), float(entry.totals.Social)]
     var random := RandomNumberGenerator.new()
     random.seed = seed_value
     for i in range(entries.size() - 1, 0, -1):
@@ -63,15 +72,13 @@ func _swap(a: int, x: int, b: int, y: int) -> void:
     tribes[a].members[x] = tribes[b].members[y]
     tribes[b].members[y] = temp
 
-func _score(catalog: SurvivorContestantCatalog) -> float:
+func _score(_catalog: SurvivorContestantCatalog) -> float:
     var sums: Array = []
     for tribe: Dictionary in tribes:
         var values := [0.0, 0.0, 0.0, 0.0]
         for id: int in tribe.members:
-            var entry := catalog.get_by_id(id)
-            values[0] += 50 if entry.gender == "male" else 0
-            for i in 3:
-                values[i + 1] += entry.totals[["Physical", "Mental", "Social"][i]]
+            for i in 4:
+                values[i] += _ratings[id][i]
         sums.append(values)
     var score := 0.0
     for a in count:

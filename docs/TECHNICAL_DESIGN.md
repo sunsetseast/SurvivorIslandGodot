@@ -420,3 +420,12 @@ The latter loads both actual camp sizes and verifies spawn clearance, conversati
 selected participant journals and saved pose. Keep private captures and catalogs out
 of public Git and Actions artifacts. Mobile Chromium emulation is a regression aid;
 physical iPhone Safari still requires device review.
+
+The configurable codec uses sorted JSON keys for canonical output; the technical
+encoder retains its existing ordering. Configurable guest saves are excluded from
+account import and rejected again at import and upload boundaries. Private UI staging
+also allowlists the five existing `Assets/Tribe/*-banner.png` files, reduced with their
+original proportions intact. The review uses parallel tribe columns and banner icons.
+`tools/selection/review_season_web.py` runs one touch-only Chromium landscape flow
+against a temporary authenticated loopback server, capturing setup and both camp sizes
+and exercising Save, Exit, Continue, Reload and Load Game without cloud mutation.

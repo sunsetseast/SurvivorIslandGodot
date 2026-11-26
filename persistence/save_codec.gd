@@ -8,7 +8,7 @@ const MAX_REVISION := 4_000_000_000
 
 static func encode(state: Dictionary, revision: int, stamp: int) -> String:
     var payload := JSON.stringify({"schema": SCHEMA, "game_version": GAME_VERSION,
-        "save_revision": revision, "timestamp": stamp, "state": state}, "", false, true)
+        "save_revision": revision, "timestamp": stamp, "state": state}, "", state.get("ruleset") == SurvivorSeasonConfiguration.RULESET, true)
     return JSON.stringify({"payload": payload, "sha256": payload.sha256_text()})
 
 static func decode(raw: String) -> Dictionary:

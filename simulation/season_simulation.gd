@@ -154,7 +154,13 @@ static func restore(data: Dictionary) -> SeasonSimulation:
     sim.pose = data.pose.duplicate(true)
     sim.rng.state = int(data.rng_state)
     for location: String in sim.camps:
-        sim.camps[location].restore(data.world[location])
+        var saved: Dictionary = data.world[location].duplicate(true)
+        if not sim.configuration.is_empty():
+            var ordered := {}
+            for id: String in sim.camps[location].people:
+                ordered[id] = saved.people[id]
+            saved.people = ordered
+        sim.camps[location].restore(saved)
     return sim
 
 func tribe_locations() -> Dictionary:

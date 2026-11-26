@@ -21,6 +21,14 @@ func _initialize() -> void:
                 division.seed_value = seed_value
                 division.assign(catalog)
                 check(division.validate(catalog, 18), "Membership " + method)
+                if method == "Balanced":
+                    var males: Array = []
+                    for tribe: Dictionary in division.tribes:
+                        var number := 0
+                        for id: int in tribe.members:
+                            number += int(catalog.get_by_id(id).gender == "male")
+                        males.append(number)
+                    check(males.max() - males.min() <= 1, "Balanced gender representation")
                 var config := division.configuration(catalog, setup)
                 division.assign(catalog)
                 check(config == division.configuration(catalog, setup), "Deterministic assignment")
@@ -39,6 +47,7 @@ func _initialize() -> void:
                 if decoded.status == "valid":
                     var restored := SeasonSimulation.restore(decoded.state)
                     check(restored.snapshot() == state, "Canonical restore")
+                    check(SaveCodec.encode(restored.snapshot(), 1, 100) == SaveCodec.encode(state, 1, 100), "Canonical serialization")
                     sim.advance("tonsai")
                     restored.advance("tonsai")
                     check(sim.snapshot() == restored.snapshot(), "RNG continuation")
@@ -51,5 +60,8 @@ func _initialize() -> void:
     check(division.tribes[1].members[0] == before and division.validate(catalog, 18), "Manual swap")
     var technical := SeasonSimulation.new("a".repeat(32), "c".repeat(32), 1)
     check(SaveCodec.decode(SaveCodec.encode(technical.snapshot(), 1, 100)).status == "valid", "Technical compatibility")
+    var cloud := SurvivorCloudSaveService.new(null)
+    check(not cloud.mark_guest_import(1, {"ruleset":SurvivorSeasonConfiguration.RULESET}), "No configurable account import")
+    cloud.free()
     print("PHASE 4C failures: ", failures)
     quit(1 if failures else 0)

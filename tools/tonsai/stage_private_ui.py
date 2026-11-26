@@ -10,3 +10,11 @@ for name,width in [('logo.png',1024),('rect-button.png',384),('rect-button-1.png
         image=image.convert('RGBA');image=image.crop(image.getbbox())
         image.resize((width,round(image.height*width/image.width)),Image.Resampling.LANCZOS).save(a.destination/name,optimize=True)
 shutil.copyfile(a.source/'Survivant.ttf',a.destination/'Survivant.ttf')
+
+# Phase 4C approved tribe artwork, private staging only; retain full proportions.
+for color in ('red', 'orange', 'blue', 'purple', 'green'):
+    source = a.source / 'Tribe' / f'{color}-banner.png'
+    with Image.open(source) as image:
+        image = image.convert('RGBA')
+        image.thumbnail((128, 192), Image.Resampling.LANCZOS)
+        image.save(a.destination / f'tribe-{color}.png', optimize=True)
