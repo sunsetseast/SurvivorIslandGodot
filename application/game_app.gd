@@ -1,7 +1,7 @@
 class_name SurvivorGameApp
 extends Node
 
-enum Screen { MAIN, SLOTS, SETTINGS, SESSION, ACCOUNT, MULTIPLAYER, NEW_GAME, CREDITS }
+enum Screen { MAIN, SLOTS, SETTINGS, SESSION, ACCOUNT, MULTIPLAYER, NEW_GAME, CREDITS, SELECTION }
 const AUTOSAVE_SECONDS := 30
 
 var screen := Screen.MAIN
@@ -41,6 +41,9 @@ var _unload_ms := 0
 var _save_usec := 0
 var _review_elapsed := 0.0
 var _title_environment: IslandTitleEnvironment
+var selection_setup := SurvivorNewSeasonSetup.new()
+var contestant_catalog := SurvivorContestantCatalog.new()
+var _selection: SurvivorSelectionScreen
 var _brand_panel: VBoxContainer
 
 func _ready() -> void:
@@ -133,6 +136,9 @@ func _suspend(value: bool) -> void:
         remote.suspend(value)
     if value and _account_scroll != null:
         _account_scroll.cancel_touch()
+    if is_instance_valid(_selection):
+        _selection.process_mode = Node.PROCESS_MODE_DISABLED if value else Node.PROCESS_MODE_INHERIT
+        _selection.visible = not value
     if locations.camp == null:
         return
     locations.camp.hud.touch.cancel()
@@ -163,6 +169,10 @@ func _process(delta: float) -> void:
     for key: String in _actions:
         var center: Vector2 = _actions[key].get_global_rect().get_center() / size
         actions[key] = [center.x, center.y]
+    if screen == Screen.SELECTION and is_instance_valid(_selection):
+        _review.survivorApp = JSON.stringify({"screen":"SELECTION", "actions":actions,
+            "selection":_selection.review_state(), "season":"", "ui_font":_ui.theme.default_font.get_font_name()})
+        return
     if remote != null:
         _review.survivorApp = JSON.stringify({"screen": Screen.keys()[screen], "actions": actions,
             "connected": remote.connected, "active": remote.active, "host_ready":
@@ -212,12 +222,23 @@ func _main(message := "") -> void:
         _brand_panel.add_child(_status)
 
 func _new_game() -> void:
-    _menu(Screen.NEW_GAME, "A new beginning", "Start the playable Tonsai season.\nChoose an empty save slot.\nSelection and season options arrive later.")
-    _button("begin", "Choose Save Slot", _slots.bind(true)).theme_type_variation = "PrimaryButton"
-    _button("back", "Back", _main)
+    _menu(Screen.SELECTION, "", "")
+    for child: Node in _ui.get_children():
+        _ui.remove_child(child)
+        child.queue_free()
+    _account_panel = null
+    _account_scroll = null
+    _selection = SurvivorSelectionScreen.new()
+    _selection.catalog = contestant_catalog
+    _selection.setup = selection_setup
+    _selection.back_requested.connect(_main)
+    _ui.add_child(_selection)
+    _actions = _selection.actions
+
 
 func _credits() -> void:
     _menu(Screen.CREDITS, "Credits & notices", "Survivor Island · Development build\n\nTonsai environment: existing project reconstruction and CC0 assets from Poly Haven.\nWater: GodotLearning Stylized Water (CC0).\nAnimation: Quaternius (CC0). Fire: Unity Labs (CC0).\nTypography: Survivant in private builds (rights verification pending). Noto Sans fallback, Google (SIL Open Font License 1.1).\nCamera damping: Phantom Camera (MIT).\n\nSource and license notices: docs/phase2/ASSETS.md, application/presentation/fonts/LICENSE.txt and controllers/third_party/PHANTOM_CAMERA_LICENSE.txt.\nOriginal logo: developer-approved reuse; distribution clearance remains unverified.\nNo commercial affiliation is claimed.")
+    _button("technical", "Technical Season Test", _slots.bind(true))
     var notices := Label.new()
     notices.text = FileAccess.get_file_as_string("res://application/presentation/fonts/LICENSE.txt") + "\n" + FileAccess.get_file_as_string("res://controllers/third_party/PHANTOM_CAMERA_LICENSE.txt")
     notices.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -540,9 +561,10 @@ func _leave() -> void:
     _main()
 
 func _menu(next: Screen, title: String, message: String) -> void:
+    _selection = null
     screen = next
     _brand_panel = null
-    if next == Screen.SESSION:
+    if next in [Screen.SESSION, Screen.SELECTION]:
         _release_title()
     elif not is_instance_valid(_title_environment):
         _title_environment = IslandTitleEnvironment.new()

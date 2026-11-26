@@ -1,6 +1,7 @@
 """Package a staged Tonsai export for a static host with a per-file size limit."""
 import argparse
 import gzip
+import json
 import re
 import shutil
 from pathlib import Path
@@ -28,16 +29,35 @@ bootstrap = """<script>
     // Serve the original engine and pack through a gzip stream on static hosts.
     const originalFetch = window.fetch.bind(window);
     const packed = new Map([
-        [new URL("index.wasm", document.baseURI).href, ["application/wasm", WASM_SIZE]],
-        [new URL("index.pck", document.baseURI).href, ["application/octet-stream", PACK_SIZE]],
+        [new URL("index.wasm", document.baseURI).href, ["application/wasm", WASM_SIZE, WASM_PARTS]],
+        [new URL("index.pck", document.baseURI).href, ["application/octet-stream", PACK_SIZE, PACK_PARTS]],
     ]);
     window.fetch = async (resource, options) => {
         const url = new URL(resource instanceof Request ? resource.url : resource, document.baseURI);
         const entry = packed.get(url.href);
         if (!entry) return originalFetch(resource, options);
-        const response = await originalFetch(url.href + ".gz", options);
-        if (!response.ok) return response;
-        return new Response(response.body.pipeThrough(new DecompressionStream("gzip")), {
+        // Stream consecutive bounded parts; never buffer the complete pack twice.
+        let part = 0;
+        let reader = null;
+        const compressed = new ReadableStream({
+            async pull(controller) {
+                while (part < entry[2].length) {
+                    if (!reader) {
+                        const response = await originalFetch(new URL(entry[2][part], document.baseURI), options);
+                        if (!response.ok) throw new Error("Preview download failed: " + response.status);
+                        reader = response.body.getReader();
+                    }
+                    const chunk = await reader.read();
+                    if (!chunk.done) { controller.enqueue(chunk.value); return; }
+                    reader.releaseLock();
+                    reader = null;
+                    part++;
+                }
+                controller.close();
+            },
+            async cancel(reason) { if (reader) await reader.cancel(reason); },
+        });
+        return new Response(compressed.pipeThrough(new DecompressionStream("gzip")), {
             headers: {"Content-Type": entry[0], "Content-Length": entry[1]},
         });
     };
@@ -50,9 +70,16 @@ for suffix, magic, placeholder in (
     payload = (args.build / f"index.{suffix}").read_bytes()
     assert payload.startswith(magic)
     compressed = gzip.compress(payload, compresslevel=6, mtime=0)
-    assert len(compressed) < 25 * 1024 * 1024, suffix
-    (args.dist / f"index.{suffix}.gz").write_bytes(compressed)
+    part_size = 20 * 1024 * 1024
+    parts = []
+    for offset in range(0, len(compressed), part_size):
+        name = f"index.{suffix}.gz" if len(compressed) <= part_size else f"index.{suffix}.gz.{len(parts):03d}"
+        (args.dist / name).write_bytes(compressed[offset:offset + part_size])
+        parts.append(name)
+    assert gzip.decompress(b"".join((args.dist / name).read_bytes() for name in parts)) == payload
     bootstrap = bootstrap.replace(placeholder, str(len(payload)))
+    bootstrap = bootstrap.replace(placeholder.replace("SIZE", "PARTS"), json.dumps(parts))
+    print(f"{suffix}: {len(payload):,} bytes, {len(parts)} compressed part(s), exact reconstruction verified")
 
 html = (args.build / "index.html").read_text()
 assert re.search(r"GODOT_THREADS_ENABLED\s*=\s*false", html)

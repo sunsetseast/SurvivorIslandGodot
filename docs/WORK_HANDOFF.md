@@ -28,3 +28,16 @@ only the four approved files through `tools/tonsai/stage_private_ui.py`. Public 
 must leave it unset. Future artwork uses and deferred shoreline/wind/weather targets
 are recorded in TECHNICAL_DESIGN.md. The Web regression now follows the deliberate
 NEW_GAME → Choose Save Slot boundary; it retains the complete gameplay assertions.
+
+## Phase 4B → Phase 4C
+
+New Game now browses the complete privately staged catalog; public builds deliberately
+show catalog unavailable. Retain `SurvivorGameApp.selection_setup` and call
+`selection_setup.validate(contestant_catalog)` before Phase 4C creates anything.
+`selected_id` is the original catalog ID, `information_mode` is Detailed/Immersive,
+and trait/gender filters retain navigation context. Catalog entries separate attributes,
+appearance metadata and copied starting defaults. Selection confirmation creates no
+season, tribe, ruleset, save or network activity. Technical Season Test remains under
+Credits & notices. Existing saves remain bound to the unchanged technical ruleset.
+Use the Phase 4B section in TECHNICAL_DESIGN.md for private staging and preview ownership;
+do not use rejected reference models as contestant substitutes.
