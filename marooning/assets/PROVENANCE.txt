@@ -1,0 +1,22 @@
+Sailing Galleon v1 — Tevy (https://tevy.dev)
+Source listing: https://tevy.dev/models/galleon
+Exact source file: https://tevy.dev/models/galleon/v1/lod0.glb
+License: CC0 1.0 Universal, https://creativecommons.org/publicdomain/zero/1.0/
+Verified 2026-11-26: listing JSON-LD and visible license both declare CC0.
+Original GLB SHA256:
+30d6c04f6b664c8e8c5ea20383f6abc53e7f70eb5e0f42578b53e7ef5a54655d
+Actual source geometry: 57,832 triangles; approximately 19.197 x 41.223 x 45.147 m.
+Godot 4.7.2 does not import its required meshopt, quantization and BasisU extensions.
+Modifications: decode meshopt; dequantize attributes; decode KTX2 to PNG; resize
+textures to at most 1024 x 1024. Original sail colors retained. Gunport and furled
+sail nodes hidden at runtime. Added independent timber deck, ramp and collisions.
+Converted GLB SHA256:
+417beb7a5f26edab77aa35b46da1927488647c07aa8ecc52483fca7509842bb2
+Regeneration: tools/marooning/convert_ship.sh (offline conversion tools only).
+
+Bay reuses existing world/water.gdshader, water-ripple.png, kloofendal-clear.jpg,
+and pinned Tonsai palm meshes from tools/tonsai/prepare.mjs. Their existing asset
+provenance and licenses remain in docs. No new external tropical/prop assets.
+Cargo, rafts, dock, landing flag and seabed: original procedural geometry in bay.gd.
+Actors: existing temporary maeve.glb and existing actor/controller, no new art.
+Restricted catalog/portraits/UI are staged separately, never part of this asset.

@@ -517,3 +517,35 @@ recovery RLS/no-policy info and disabled leaked-password-protection warning pred
 this assignment and remain unchanged. Reference remediation guidance:
 [RLS policy advisor](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy)
 and [password protection](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection).
+
+### Phase 4D.1 marooning environment preview
+
+The confirmed tribe review exposes **Private Marooning Preview · No Save** only for
+an existing validated Phase 4C configuration. `MarooningPreview` receives a deep copy
+and the read-only catalog; it creates no session, save provider or cloud transport.
+Exit frees the preview and returns to that same tribe review. Ordinary confirmation
+and empty-slot creation are unchanged. Missing private catalogs retain the existing
+unavailable selection state; there is no production fixture cast.
+
+`marooning/preview.tscn` composes an independent `MarooningBay`, existing temporary
+actors, CampThirdPerson and CampTouch. The existing motors, camera steering sensitivity
+and absolute per-finger input code are unchanged. Both skip and natural intro completion
+cancel touch, blend to the orbit camera and unlock control. Focus loss cancels input.
+There are exactly 18 ID-bound contestants plus a temporary host. Names and tribe accents
+come from configuration/catalog; information mode remains in the transient configuration.
+
+`marooning/layout.tres` is editable layout data in metres. Stable semantic markers cover
+ship, deck, host, cargo kinds, spawn groups, active raft mounts, reward dock/reward ID,
+player landing, two rival exits and future camp transition. `layout.routes(config)` maps
+the controlled tribe to the one landing and each rival to a separate configurable exit;
+no rival beach or full camp scene loads. The seabed sampler supplies the existing swimming
+motor and the same vertices supply rendering and collision. Clearly labeled preview-only
+relocation supports inspection of beach/dock and return to deck. Physical platforms stay
+stationary. Navigation is generated offline by tools/marooning/bake_nav.gd; build staging
+rebakes it. Ship source conversion and license details are in marooning/assets/PROVENANCE.txt.
+The server build allowlist is unchanged. Private staged data stays out of public exports.
+
+Deferred to 4D.2: scramble timing, pickup/throw, cargo ownership, release/paddling,
+competitive AI, reward claims, social consequences, camp inventory and save schema.
+No frame-rate claim is established by headless tests; browser review records wall-clock
+render intervals only, and physical iPhone performance remains owner-tested.
