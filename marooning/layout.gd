@@ -18,7 +18,8 @@ func routes(config: Dictionary) -> Dictionary:
     for tribe: Dictionary in config.tribes:
         var own: bool = config.selected in tribe.members
         result[tribe.id] = {"route_id": "player-landing" if own else "rival-exit-%d" % rival,
-            "destination": landing if own else rival_exits[rival], "camp": tribe.location}
+            "destination": landing if own else rival_exits[rival], "camp": tribe.location,
+            "raft_id":"raft-%d" % result.size(), "raft_mount":raft_mounts[result.size()]}
         if not own:
             rival += 1
     return result

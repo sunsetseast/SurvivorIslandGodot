@@ -83,15 +83,15 @@ func run() -> void:
         for frame in 30:
             await physics_frame
         check(preview.player.is_on_floor() and absf(preview.player.position.y - preview.layout.deck_y) < .2, "Deck supports motor")
-        preview._relocate(Vector3(-2.8, preview.layout.deck_y + .15, -3.5))
+        preview._relocate(Vector3(-3.0, preview.layout.deck_y + .15, -3.5))
         preview.player.yaw = 0
         preview.player.sync_camera()
         preview.player.touch_direction = Vector2(0, -1)
-        for frame in 240:
+        for frame in 420:
             await physics_frame
         preview.touch.cancel()
         print("Host ramp arrival: ", preview.player.position)
-        check(preview.player.position.y > preview.layout.deck_y + 2.3, "Existing motor climbs visible host ramp")
+        check(preview.player.position.y > preview.layout.deck_y + 2.3 and preview.player.position.z < -8.5, "Existing motor climbs visible host ramp")
         preview.inspect_landing()
         for frame in 60:
             await physics_frame
@@ -100,6 +100,32 @@ func run() -> void:
         for frame in 60:
             await physics_frame
         check(preview.player.is_on_floor(), "Dock supports motor")
+        var test_transform := preview.player.global_transform
+        test_transform.origin = Vector3(3.2,preview.layout.deck_y+.05,0)
+        check(preview.player.test_move(test_transform,Vector3(3,0,0)), "Starboard railing rejects penetration")
+        test_transform.origin = Vector3(0,preview.layout.deck_y+.05,-6)
+        check(preview.player.test_move(test_transform,Vector3(0,0,-4)), "Cabin wall rejects penetration")
+        var nav_map: RID = preview.get_world_3d().navigation_map
+        for item: Dictionary in preview.scramble.simulation.items.values():
+            var path := NavigationServer3D.map_get_path(nav_map,Vector3(0,preview.layout.deck_y,3),item.position,true)
+            check(not path.is_empty() and path[path.size()-1].distance_to(item.position) < 1.2,"Cargo anchor reachable: " + item.id)
+        preview.reset_deck()
+        preview.scramble.start()
+        for frame in 7205:
+            await physics_frame
+        var sim := preview.scramble.simulation
+        check(sim.phase == MarooningScramble.Phase.SCRAMBLE_COMPLETE, "Full gameplay timer completes")
+        check(sim.items.size() == 50, "Conserves exactly 50 supplies")
+        var participants := {}
+        var deliveries := {}
+        for event: Dictionary in sim.events:
+            if event.action == "pickup" and event.outcome == "success":
+                participants[event.actor] = true
+            if event.action == "load" and event.outcome == "success":
+                deliveries[event.tribe] = int(deliveries.get(event.tribe,0)) + 1
+        print("Scramble pickups: ",participants.keys()," deliveries: ",deliveries)
+        check(participants.size() == 17, "All 17 NPCs physically collect")
+        check(deliveries.size() == count_value, "Every tribe physically delivers")
         check(preview.configuration == original, "Configuration remains transient and unchanged")
         var reference: WeakRef = weakref(preview)
         preview.queue_free()

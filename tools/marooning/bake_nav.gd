@@ -11,6 +11,8 @@ func bake() -> void:
     mesh.agent_height = 1.8
     mesh.cell_size = .25
     mesh.cell_height = .15
+    # Only deck circulation: exclude seabed, interior hull and distant platforms.
+    mesh.filter_baking_aabb = AABB(Vector3(-3.8, 1.5, -9.5), Vector3(7.6, 6.0, 19))
     var source := NavigationMeshSourceGeometryData3D.new()
     NavigationServer3D.parse_source_geometry_data(mesh, source, bay)
     NavigationServer3D.bake_from_source_geometry_data(mesh, source)

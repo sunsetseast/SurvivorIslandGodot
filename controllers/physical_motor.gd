@@ -16,6 +16,7 @@ const DIVE_OFFSET := 2.35
 const DIVE_MIN_DEPTH := 2.60
 const DIVE_SPEED := 1.85
 
+var movement_speed_multiplier := 1.0
 var water: CampWaterSurface
 var locomotion := Locomotion.LAND
 var travel_heading := 0.0
@@ -61,6 +62,7 @@ func walk_direction(desired: Vector3, running: bool, delta: float, _animate := t
     elif locomotion == Locomotion.WADE:
         var drag := smoothstep(WADE_EXIT, SWIM_ENTER, water.depth_at(global_position))
         speed *= lerpf(.89, .39, drag)
+    speed *= movement_speed_multiplier
     var input := desired.limit_length()
     _steer_planar(input, speed, acceleration, braking, delta)
     velocity.x = planar.x
