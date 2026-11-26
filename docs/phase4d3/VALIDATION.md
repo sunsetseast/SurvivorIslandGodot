@@ -74,12 +74,17 @@ allows a longer capture timeout. No physical iPhone or Safari test is claimed.
 
 An additional browser pilot physically walked off the bow, swam around the ship and raft, boarded by touch and used Paddle. Actual timing UI captures were taken at 956×440 and 812×375, plus loaded nine-crew raft side/overhead and competing-raft views. That older export reproduced the shore congestion defect before the later native fix; it is not a final browser-arrival pass. Screenshot inspection also caught clipped bottom controls. The final panel grows upward, uses larger touch targets, and contextual scramble actions occupy the lower right. `tests/race_ui_test.gd` checks all these action rectangles at both landscape sizes with zero failures. A later local native rendering run captured all nine requested in-game evidence categories, plus raft side/overhead and smaller-landscape timing views. Synthetic GUI touches reached the actual Steal/Paddle/Jump commands; normal 120-second scrambles and complete physical journeys passed. These are native scene captures, not a claim of Safari or final browser-arrival acceptance. Screenshot inspection also found and fixed clipped arrival equipment/personal-stat text; a worst-case all-15-type summary bounds test passes. Restricted images and their index remain under ignored build directories outside the export staging root.
 
-Cloud status advertises HTTP port 3000 but returns no HTTPS URL. Automatic approval
-review rejected binding the restricted build to 0.0.0.0 because owner-only access
-was unverified. A safer loopback-only server is running for automated browser
-acceptance. No public host, deployment, paid service, or restricted Actions artifact
-was created. A localhost address is not a physical-phone preview. Owner-only HTTPS
-link readiness and access verification remain required for phone delivery.
+The original Cloud port did not provide an HTTPS URL. A later delivery follow-up
+reused the existing owner-only Site, verified its sole-owner allowlist and anonymous
+asset denial, and successfully deployed the protected build. Actual in-game captures
+are now uploaded to an authenticated personal private Page. See
+[DELIVERY_VALIDATION.md](DELIVERY_VALIDATION.md) for the current delivery and recovery
+investigation, superseding the original local-only delivery status.
+
+A final deployed-browser follow-up now passes actual touch-driven independent-swimmer
+arrival, summary, no-save assertions and exit. Two scoped-automation audio-worklet
+401 errors remain documented; this is not an error-free audio or physical Safari
+acceptance claim. See [DELIVERY_VALIDATION.md](DELIVERY_VALIDATION.md).
 
 ## Remaining acceptance work
 
@@ -90,8 +95,9 @@ loss/resume and restart in each mode. Check 956×440 and a smaller landscape vie
 button reach, timing readability and actual frame pacing. Restricted captures must
 remain private. Cloud/browser tests do not certify real-device performance.
 
-The current initial AI may need a bounded, journaled recovery after deck navigation
-fails in a congested loaded scene. An inactive player can keep their own arrival
+The current initial AI may need a bounded, journaled deck recovery. Follow-up
+diagnostics identify waypoint-height/tolerance stalls and an off-centre technical
+pilot bow approach; the three-tribe total includes two NPCs and one technical pilot. An inactive player can keep their own arrival
 unresolved while NPCs continue. Rival arrival state may remain unresolved when the
 selected tribe completes; it is preserved explicitly in the transient handoff.
 
