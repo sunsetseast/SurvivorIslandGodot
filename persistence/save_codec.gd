@@ -40,6 +40,9 @@ static func decode(raw: String) -> Dictionary:
         envelope.schema = SCHEMA
     if state.get("ruleset") == SurvivorSeasonConfiguration.RULESET:
         state = SurvivorContestantCatalog._integers(state)
+        if state.get("configuration") is Dictionary and state.configuration.get("catalog") is String:
+            state.configuration.catalog = SurvivorSeasonConfiguration.migrate_fingerprint(
+                state.configuration.catalog, SurvivorContestantCatalog.new())
         envelope.state = state
     if not _valid_state(state):
         return bad

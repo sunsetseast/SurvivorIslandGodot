@@ -11,8 +11,22 @@ var method: String = "Balanced"
 var tribes: Array = []
 var _ratings: Dictionary = {}
 
+# Presentation metadata and asset bindings are deliberately outside save compatibility.
+# Only the shipped Phase 4C preview catalog is grandfathered. Matching the pinned
+# gameplay digest prevents this migration from blessing a changed calibration.
+const LEGACY_PREVIEW := "7978150147d1518f5ac3773d0e3e2a63c64a9b1a981857f7158a049b0ebf392d"
+const PREVIEW_GAMEPLAY := "gameplay-v1:3b8c699247b5a997dfe0ed15dc23bddf446e99c7c63f1262ba42dca294373804"
+const GAMEPLAY_FIELDS := ["id", "name", "gender", "trait", "style", "attributes", "totals", "defaults"]
+
 static func fingerprint(catalog: SurvivorContestantCatalog) -> String:
-    return JSON.stringify(catalog.all(), "", true).sha256_text()
+    var gameplay: Array[Dictionary] = []
+    for entry: Dictionary in catalog.all():
+        var record := {}
+        for field: String in GAMEPLAY_FIELDS:
+            record[field] = entry[field]
+        gameplay.append(record)
+    gameplay.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a.id) < int(b.id))
+    return "gameplay-v1:" + JSON.stringify(gameplay, "", true).sha256_text()
 
 func assign(catalog: SurvivorContestantCatalog) -> void:
     if method == "Brains / Brawn / Beauty":
@@ -21,8 +35,20 @@ func assign(catalog: SurvivorContestantCatalog) -> void:
         count = 2
     var identities := tribes.duplicate(true)
     tribes.clear()
+    # Separate RNG stream preserves membership results while seeding initial identities.
+    var identity_rng := RandomNumberGenerator.new()
+    identity_rng.seed = seed_value
+    var names := NAMES.duplicate()
+    _shuffle(names, identity_rng)
+    var colors := COLORS.duplicate()
+    _shuffle(colors, identity_rng)
+    # Remove whichever conflicting color occurs later; remaining order stays seeded.
+    if colors.find("red") < colors.find("orange"):
+        colors.erase("orange")
+    else:
+        colors.erase("red")
     for i in count:
-        tribes.append({"id":"tribe-%d" % (i + 1), "name":NAMES[i], "color":["red", "blue", "green"][i], "label":"", "members":[]})
+        tribes.append({"id":"tribe-%d" % (i + 1), "name":names[i], "color":colors[i], "label":"", "members":[]})
     if identities.size() == count:
         for i in count:
             tribes[i].name = identities[i].name
@@ -137,3 +163,15 @@ static func roster_for(config: Dictionary, catalog: SurvivorContestantCatalog, o
                 var controlled: bool = int(entry.id) == int(config.selected)
                 result[str(int(entry.id))] = {"catalog":int(entry.id), "name":entry.name, "tribe":tribe.id, "location":tribe.location, "controller":"human" if controlled else "ai", "owner":owner if controlled else "", "status":"active", "attributes":entry.attributes.duplicate(true), "state":entry.defaults.duplicate(true)}
     return result
+
+static func _shuffle(values: Array, random: RandomNumberGenerator) -> void:
+    for i in range(values.size() - 1, 0, -1):
+        var j := random.randi_range(0, i)
+        var temp: Variant = values[i]
+        values[i] = values[j]
+        values[j] = temp
+
+static func migrate_fingerprint(saved: String, catalog: SurvivorContestantCatalog) -> String:
+    if saved == LEGACY_PREVIEW and fingerprint(catalog) == PREVIEW_GAMEPLAY:
+        return PREVIEW_GAMEPLAY
+    return saved

@@ -429,3 +429,27 @@ original proportions intact. The review uses parallel tribe columns and banner i
 `tools/selection/review_season_web.py` runs one touch-only Chromium landscape flow
 against a temporary authenticated loopback server, capturing setup and both camp sizes
 and exercising Save, Exit, Continue, Reload and Load Game without cloud mutation.
+
+### Phase 4C compatibility hotfix
+
+Catalog compatibility now hashes an explicit, ID-sorted gameplay projection (`id`,
+`name`, gender, trait, style, attributes, totals and starting defaults), tagged
+`gameplay-v1`. Portrait/model paths and original/appearance season metadata are
+excluded. The exact shipped Phase 4C preview digest has a pinned migration to its
+approved gameplay digest; it is accepted only when the current gameplay digest still
+matches that pin. Unknown old digests and changed gameplay calibrations fail closed.
+Decode upgrades the in-memory configuration; the existing local save flow writes the
+new digest on its next checkpoint. No account/cloud migration is involved.
+
+Initial tribe names and compatible unique colors use a separate seeded shuffle,
+leaving seeded membership behavior unchanged. Later membership rerolls retain the
+current customized identities. The red/orange exclusion is enforced before color
+selection and remains independently validated.
+
+The failed Tonsai run 45739892691 omitted the shared simulation's three typed
+catalog/setup/configuration dependencies from the dedicated server stage. The stage
+now explicitly copies only those scripts, without selection UI or restricted data,
+portraits, models, fonts or other artwork. The server still runs the unchanged
+technical multiplayer ruleset. No hosted server deployment is part of this fix.
+Public synthetic compatibility fixtures run in the isolated simulation stage; private
+Phase 4C tests additionally exercise the exact shipped-preview migration pin.

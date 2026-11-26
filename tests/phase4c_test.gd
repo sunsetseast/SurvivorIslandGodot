@@ -42,6 +42,21 @@ func _initialize() -> void:
                 for tick in 120:
                     sim.advance("tonsai")
                 var state := sim.snapshot()
+                if method == "Random" and count_value == 2 and seed_value == 1:
+                    var legacy := state.duplicate(true)
+                    legacy.configuration.catalog = SurvivorSeasonConfiguration.LEGACY_PREVIEW
+                    var migrated := SaveCodec.decode(SaveCodec.encode(legacy, 1, 100))
+                    check(migrated.status == "valid" and migrated.state == state, "Shipped preview save migrates")
+                    var art := catalog.all()
+                    for person: Dictionary in art:
+                        person.model_path = "res://private_cast/models/replacement.glb"
+                        person.portrait_path = "res://private_cast/portraits/replacement.webp"
+                        person.appearance_season = "Replacement appearance"
+                    var file := FileAccess.open("user://art-replacement.json", FileAccess.WRITE)
+                    file.store_string(JSON.stringify({"version":1,"entries":art}))
+                    file.close()
+                    var replacement := SurvivorContestantCatalog.new("user://art-replacement.json")
+                    check(SurvivorSeasonConfiguration.migrate_fingerprint(SurvivorSeasonConfiguration.LEGACY_PREVIEW, replacement) == SurvivorSeasonConfiguration.fingerprint(catalog), "Legacy migration survives replacement art")
                 var decoded := SaveCodec.decode(SaveCodec.encode(state, 1, 100))
                 check(decoded.status == "valid", "Save " + method)
                 if decoded.status == "valid":
