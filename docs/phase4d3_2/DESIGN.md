@@ -36,7 +36,7 @@ A completed bin deposit owns its exact item. A visible individual haul follows t
 
 ## Travel and decisions
 
-Each raft is independently moored, underway, grounded or regrouped. Attribute- and seed-derived collection intentions, readiness, willing paddlers, leadership, opponents, swimmers and human encouragement affect a short departure decision. NPCs prefer at least two paddlers; after the collection deadline a minimal willing crew can depart after a short grace. Empty or resting crews produce no force. Human rest and jump are explicit choices.
+Each raft is independently moored, underway, grounded or regrouped. Attribute- and seed-derived collection intentions, readiness, willing paddlers, leadership, opponents, swimmers and human encouragement affect a short departure decision. Human encouragement records its first timestamp and caller; nearby NPCs reconsider collection after a bounded 1.5–5 second attribute-based response, and repeated taps cannot postpone it. NPCs prefer at least two paddlers; after the collection deadline a minimal willing crew can depart after a short grace. Empty or resting crews produce no force. Human rest and jump are explicit choices.
 
 The bow is visibly closed and collidable. Open side gates use identical clipped visible/collision triangles, matching timber ramps and real water access. The basket is clear of the gate. NPCs can choose distinct takeoff points around local congestion. The HUD explicitly communicates that jumping commits the player to water travel; it does not promise a return climb through the hull.
 
@@ -50,7 +50,7 @@ Landing uses a broad dry region, staggered non-collinear activity goals and mean
 
 ## Recovery
 
-Progress checks distinguish route progress from motion against obstacles. Deck recovery repaths, releases/rotates unloading reservations, validates capsule-clear physical retreats and does not reset its immobility clock merely because a target changes. Water/shore recovery tries local physical alternate goals.
+Progress checks distinguish route progress from motion against obstacles. Deck recovery repaths, releases/rotates unloading reservations, validates capsule-clear physical retreats and does not reset its immobility clock merely because a target changes. Measured lateral static contacts also feed bounded deck obstacle markers to RVO: the navigation mesh alone does not teach avoidance about imported ship walls. A retreat tests body travel, real floor height and full capsule occupancy, and still uses the computed safe velocity. Water/shore recovery tries local physical alternate goals.
 
 Only after 45 seconds without route progress and at least eight measured retries may an NPC receive a local, collision-checked fade assist. It cannot move a human, move forward toward an objective, enter reward/arrival range, award cargo or fabricate completion. The result logs actor, from/to, reason, attempts, time, cargo handling and reward-carrier status. Ordinary journeys are tested separately and must not rely on that exceptional fixture.
 

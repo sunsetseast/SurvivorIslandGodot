@@ -25,9 +25,33 @@ for name in files:
     if path.is_file():
         shutil.copyfile(path, args.dist / name)
 
+# Worklet module loads do not inherit the document's authenticated request
+# headers. Fetch the unchanged module through the normal same-origin session,
+# then instantiate those authorized bytes locally. The host ACL still protects
+# every source request; no credentials or restricted bytes enter a public URL.
+engine_path = args.dist / "index.js"
+engine_script = engine_path.read_text()
+for receiver in ("GodotAudio.ctx", "ctx"):
+    original = f"{receiver}.audioWorklet.addModule(path)"
+    assert engine_script.count(original) == 1, "Pinned Godot worklet loader changed"
+    engine_script = engine_script.replace(
+        original, f"window.survivorLoadAudioWorklet({receiver}.audioWorklet,path)")
+engine_path.write_text(engine_script)
+
 bootstrap = """<script>
     // Serve the original engine and pack through a gzip stream on static hosts.
     const originalFetch = window.fetch.bind(window);
+    window.survivorLoadAudioWorklet = async (worklet, path) => {
+        const url = new URL(path, document.baseURI);
+        if (url.origin !== location.origin) throw new Error("Unexpected worklet origin");
+        const response = await originalFetch(url, {credentials: "same-origin"});
+        if (!response.ok) throw new Error("Audio module download failed: " + response.status);
+        const module = URL.createObjectURL(new Blob([await response.arrayBuffer()], {
+            type: "application/javascript",
+        }));
+        try { await worklet.addModule(module); }
+        finally { URL.revokeObjectURL(module); }
+    };
     const packed = new Map([
         [new URL("index.wasm", document.baseURI).href, ["application/wasm", WASM_SIZE, WASM_PARTS]],
         [new URL("index.pck", document.baseURI).href, ["application/octet-stream", PACK_SIZE, PACK_PARTS]],

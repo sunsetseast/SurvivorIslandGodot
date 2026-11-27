@@ -204,6 +204,10 @@ func run() -> void:
             await frames(3)
         check(preview.session.state==MarooningSession.State.COMPLETE,"Full touch journey reaches summary "+str(count_value))
         check(preview.has_meta("marooning_result"),"Version2 transient result")
+        check(preview.session.recoveries.is_empty(),"Representative touch journey needs no exceptional recovery")
+        if not record_dir.is_empty():
+            var result_file := FileAccess.open(record_dir+"/native-%d-handoff.json"%count_value,FileAccess.WRITE)
+            result_file.store_string(JSON.stringify(preview.session.result(),"  "))
         check(not preview.player.locked,"Player retains shore look/walk")
         print("NATIVE_TOUCH_RESULT tribes=",count_value," time=",preview.session.elapsed," strokes=",state.strokes," arrived=",state.arrived," result=",preview.session.state)
         await capture("native-%d-summary"%count_value)

@@ -198,19 +198,36 @@ func _shore() -> void:
         _foliage_batch(library,["understory-%d-leaves-far"%variant],understory,0,85)
         _foliage_batch(library,["fern_02_"+["a","b","c"][variant]],understory,0,55)
 func _foliage_batch(library: Dictionary, keys: Array, transforms: Array[Transform3D], start: float, end: float) -> void:
-    for key: String in keys:
-        if not library.has(key): continue
-        var batch := MultiMesh.new()
-        batch.transform_format=MultiMesh.TRANSFORM_3D
-        batch.mesh=library[key]
-        batch.instance_count=transforms.size()
-        for i in transforms.size(): batch.set_instance_transform(i,transforms[i])
-        var node := MultiMeshInstance3D.new()
-        node.multimesh=batch
-        node.visibility_range_begin=start
-        node.visibility_range_end=end
-        node.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-        add_child(node)
+    # Visibility distance is measured from the node, not each MultiMesh instance.
+    # Keep each LOD/understory batch near its actual shore positions.
+    var chunks := {}
+    const CHUNK := 34.0
+    for transform in transforms:
+        var cell := Vector2i(floori(transform.origin.x/CHUNK),floori(transform.origin.z/CHUNK))
+        if not chunks.has(cell): chunks[cell]=[]
+        chunks[cell].append(transform)
+    for cell: Vector2i in chunks:
+        var centre := Vector3((float(cell.x)+.5)*CHUNK,0,(float(cell.y)+.5)*CHUNK)
+        var placements: Array=chunks[cell]
+        for key: String in keys:
+            if not library.has(key): continue
+            var batch := MultiMesh.new()
+            batch.transform_format=MultiMesh.TRANSFORM_3D
+            batch.mesh=library[key]
+            batch.instance_count=placements.size()
+            for i in placements.size():
+                var local: Transform3D=placements[i]
+                local.origin-=centre
+                batch.set_instance_transform(i,local)
+            var node := MultiMeshInstance3D.new()
+            node.multimesh=batch
+            node.position=centre
+            node.visibility_range_begin=start
+            node.visibility_range_end=end
+            node.visibility_range_begin_margin=4
+            node.visibility_range_end_margin=4
+            node.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+            add_child(node)
 
 func _loading_lines(count_value: int) -> void:
     var line_material := material(Color("8e7951"))

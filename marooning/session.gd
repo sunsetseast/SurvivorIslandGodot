@@ -16,6 +16,7 @@ var events: Array[Dictionary] = []
 var recoveries: Array[Dictionary] = []
 var routes: Dictionary
 var launch_requests: Dictionary = {}
+var launch_callers: Dictionary = {}
 var started := false
 
 func configure(config: Dictionary, roster: Dictionary, anchors: Array[Vector3], stations: Dictionary, access: Array[Vector3], paths: Dictionary, reward: Vector3) -> void:
@@ -132,9 +133,11 @@ func request_launch(actor: int) -> bool:
         return false
     var tribe: String=crew.tribe
     if race.rafts[tribe].state!="moored": return false
-    launch_requests[tribe]=elapsed
+    if not launch_requests.has(tribe):
+        launch_requests[tribe]=elapsed
+        launch_callers[tribe]=actor
+        race.event("launch_encouraged",actor)
     race.feedback="Departure requested; your crew is deciding"
-    race.event("launch_encouraged",actor)
     return true
 
 func evaluate_launches(access: Callable) -> void:
@@ -178,9 +181,18 @@ func evaluate_launches(access: Callable) -> void:
         var reason := "collection_closed" if deadline else ("crew_encouraged" if encouraged else "crew_ready")
         race.commit_launch(tribe.id,reason)
 
+func departure_time(actor: int) -> float:
+    var crew: Dictionary=race.actors[actor]
+    var due := float(crew.collect_until)
+    if actor!=int(configuration.selected) and launch_requests.has(crew.tribe) and race.rafts[crew.tribe].state=="moored":
+        var caller := int(launch_callers[crew.tribe])
+        var response := clampf(4.8-race.rating(caller,"leader")*.16-race.rating(actor,"risk")*.08+race.rating(actor,"laziness")*.1,1.5,5)
+        due=minf(due,float(launch_requests[crew.tribe])+response)
+    return due
+
 func wants_departure(actor: int) -> bool:
     var crew: Dictionary=race.actors[actor]
-    return state==State.ACTIVE and (not scramble.eligible(actor) or scramble.phase==MarooningScramble.Phase.SCRAMBLE_COMPLETE or elapsed>=float(crew.collect_until))
+    return state==State.ACTIVE and (not scramble.eligible(actor) or scramble.phase==MarooningScramble.Phase.SCRAMBLE_COMPLETE or elapsed>=departure_time(actor))
 
 func depart(actor: int, place: String) -> void:
     var crew: Dictionary=race.actors[actor]
@@ -199,6 +211,7 @@ func result() -> Dictionary:
     value["clock_owner"]="marooning_session"
     value["collection_seconds"]=MarooningScramble.COLLECTION_SECONDS
     value["collection_closed"]=scramble.phase==MarooningScramble.Phase.SCRAMBLE_COMPLETE
+    value["launch_encouragements"]={"times":launch_requests.duplicate(true),"callers":launch_callers.duplicate(true)}
     value["closed_stations"]=scramble.closed_tribes.duplicate(true)
     value["supply_rng_state"]=scramble.rng.state
     value["recoveries"]=recoveries.duplicate(true)

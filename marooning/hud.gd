@@ -64,6 +64,8 @@ func layout_safe(rect: Rect2) -> void:
     var portrait := area.size.x/area.size.y<.85
     var width := minf(360,area.size.x*.36) if portrait else minf(330,area.size.x*.27)
     for control: Button in actions.values(): control.add_theme_font_size_override("font_size",maxi(27,int(16*css_factor)))
+    banner.add_theme_font_size_override("font_size",maxi(25,int(16*css_factor)))
+    message.add_theme_font_size_override("font_size",maxi(24,int(16*css_factor)))
     actions.menu.position=area.position+Vector2(16,12)
     actions.menu.size=Vector2(maxf(155,target*1.6),target)
     banner.position=Vector2(area.position.x+185,area.position.y+12)
@@ -76,6 +78,11 @@ func layout_safe(rect: Rect2) -> void:
     message.size=Vector2(maxf(230,area.size.x-width-maxf(175,area.size.x*.16)-44),target+10)
     meter.position=Vector2(area.end.x-width-16,area.end.y-target-16-2*gap-32)
     meter.size=Vector2(width,32)
+    if portrait:
+        banner.position.x=actions.menu.position.x+actions.menu.size.x+16
+        banner.size=Vector2(maxf(200,area.end.x-banner.position.x-16),target*1.5)
+        message.position=area.position+Vector2(16,target*1.6+32)
+        message.size=Vector2(area.size.x-32,target*2)
     for index in 2:
         var control: Button=actions[["exit","restart"][index]]
         control.position=area.position+Vector2(16,target+22+index*gap)

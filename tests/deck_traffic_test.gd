@@ -44,12 +44,14 @@ func run() -> void:
             actor.collect_until=INF
             actor.objective="collect"
         preview.session.start(false)
+        var metrics := preload("res://tests/traffic_metrics.gd").new()
         var previous := {}
         var jam := {}
         var longest := 0.0
         for frame in 5400:
             await physics_frame
             if frame%60==0:
+                metrics.sample(preview,sim,sim.elapsed)
                 for id: int in preview.scramble.agents:
                     var point: Vector3 = preview.cast[id].position
                     var moving := not sim.carried(id).is_empty() and not sim.pending.has(id) and preview.scramble.traffic.slots.has(id)
@@ -62,7 +64,7 @@ func run() -> void:
         check(delivered==cargo.size(),"All simultaneous carriers physically deposit: "+str(scenario))
         check(longest<=8,"No persistent carrier jam over 8s: "+str(scenario)+" longest="+str(longest))
         check(sim.items.size()==50 and preview.cast.size()==18,"Conserve instances and contestant participation")
-        print("DECK_STRESS ",JSON.stringify({"scenario":scenario,"carriers":cargo.size(),"delivered":delivered,"longest_carrier_jam":longest,"path_resets":preview.scramble.traffic.resets}))
+        print("DECK_STRESS ",JSON.stringify({"scenario":scenario,"carriers":cargo.size(),"delivered":delivered,"longest_carrier_jam":longest,"path_resets":preview.scramble.traffic.resets,"metrics":metrics.result()}))
         preview.queue_free()
         await process_frame
     print("Deck traffic: ",failures," failures")

@@ -57,6 +57,10 @@ func _initialize() -> void:
     check(sim.race.rafts.t0.crew.size()==6,"Reserved climbs seat crew once")
     check(sim.race.rafts.t0.state=='moored',"No unconditional race-wide assembly launch")
     check(sim.request_launch(1),"Aboard contestant may encourage departure")
+    var first_call: float=sim.launch_requests.t0
+    sim.advance(MarooningSession.STEP)
+    check(sim.request_launch(1) and sim.launch_requests.t0==first_call,"Repeated encouragement cannot postpone the crew response")
+    check(sim.departure_time(7)<=first_call+5,"Waiting NPCs reconsider collection after attribute-based encouragement")
     for frame in 600:
         sim.advance(MarooningRace.STEP)
         if sim.race.rafts.t0.decision_at>=0: break

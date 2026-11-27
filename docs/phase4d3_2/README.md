@@ -1,6 +1,6 @@
 # Phase 4D.3.2 — continuous marooning
 
-Work in progress. This is not an acceptance report.
+Implementation checkpoint. Publication-specific native/hosted acceptance and actual private media are recorded in the [owner-private validation Page](https://chatgpt.com/space/page_496b9b22b710819188832b2a4753a537); no source-only test certifies a hosted journey.
 
 Verified starting main: `75090ff8baeea0ae51a6519d67dc74b754d906fa`.
 Verified draft PR #17 head: `1016476c0049363c082cdcce3f812a83c4b7f16e`.
@@ -28,7 +28,7 @@ A valid deposit completed exactly at a cutoff counts before closure. Pending lat
 commands are cancelled; launch never awards held cargo. Own station closure is
 permanent and independent of other tribes' collection window.
 
-Transient version 2 will retain original configuration/catalog fingerprint, seed,
+Transient version 2 retains original configuration/catalog fingerprint, seed,
 RNG states, all 50 dispositions and quantities, contribution aggregates, routes,
 launch reasons, impulse totals, swimming/fatigue, reward location and explicit
 physical/recovered arrivals. Old pure-command fixtures retain meaningful coverage;

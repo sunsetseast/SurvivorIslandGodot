@@ -15,6 +15,8 @@ var immobile_seconds: Dictionary = {}
 var slot_rotation: Dictionary = {}
 var parking: Dictionary = {}
 var yields: Dictionary = {}
+var contact_obstacles: Dictionary={}
+var escape_debug: Dictionary={}
 var human_obstacle: NavigationObstacle3D
 
 func bind(owner_node: MarooningScrambleAdapter) -> void:
@@ -164,10 +166,10 @@ func step(id: int, delta: float) -> void:
     if waiting:
         # RVO assumes idle neighbors also yield; discarding their safe velocity deadlocks carriers.
         velocity = Vector3.ZERO if sim.pending.has(id) else velocity.limit_length(.35)
-    adapter.agents[id].avoidance_priority = 1.0 if sim.pending.has(id) else ((.70+(id%17)*.009) if slots.has(id) else (.4 if not sim.carried(id).is_empty() else .3))
+    adapter.agents[id].avoidance_priority = 1.0 if sim.pending.has(id) else ((.98+(id%17)*.0008) if yields.has(id) else ((.70+(id%17)*.009) if slots.has(id) else (.4 if not sim.carried(id).is_empty() else .3)))
     adapter.agents[id].max_speed = 0.0 if sim.pending.has(id) else speed
     # Ignore numerical RVO noise; stationary actors retain their heading.
-    if velocity.length() < .12: velocity = Vector3.ZERO
+    if velocity.length() < .025: velocity = Vector3.ZERO
     actor.walk_direction(velocity/maxf(.1,speed),false,delta)
     # Side-to-side motion is not route progress. Measure the remaining planar
     # polyline, so wriggling against people cannot reset the stall deadline.
@@ -190,26 +192,17 @@ func step(id: int, delta: float) -> void:
             stalled_seconds[id] = float(stalled_seconds.get(id,0))+clock-float(sample.at)
         else: blocked[id] = 0.0
         samples[id] = {"at":clock,"remaining":remaining,"goal":goal,"position":actor.position}
-        if float(blocked.get(id,0)) > 2.5 or float(immobile_seconds.get(id,0))>2.5:
+        if float(blocked.get(id,0)) > 2.5 or float(immobile_seconds.get(id,0))>1.5:
+            register_static_contacts(actor)
             # Repath first, then release the approach for an alternate/yield. Never teleport.
             replan(id)
             # A real short retreat breaks a head-on/local avoidance equilibrium.
             var heading := (goals[id] as Vector3)-actor.position
             heading.y=0
             heading=heading.normalized()
-            for offset: Vector3 in [Vector3(heading.z,0,-heading.x),Vector3(-heading.z,0,heading.x),-heading]:
-                var candidate := actor.position+offset*.95
-                var closest := NavigationServer3D.map_get_closest_point(adapter.agents[id].get_navigation_map(),candidate)
-                if planar(closest,candidate)>.2 or absf(closest.y-actor.position.y)>.4: continue
-                var clear := true
-                for other_id: int in adapter.preview.cast:
-                    if other_id!=id and planar(candidate,adapter.preview.cast[other_id].position)<.85: clear=false
-                var ray := PhysicsRayQueryParameters3D.create(actor.position+Vector3.UP*.8,candidate+Vector3.UP*.8,1)
-                if not adapter.preview.get_world_3d().direct_space_state.intersect_ray(ray).is_empty(): clear=false
-                if actor.test_move(actor.global_transform,candidate-actor.position): clear=false
-                if clear:
-                    yields[id] = {"point":candidate,"until":clock+2.5}
-                    break
+            if heading.is_zero_approx(): heading=Vector3(-signf(actor.position.x),0,0)
+            var retreat := escape_point(id,heading)
+            if retreat!=Vector3.INF: yields[id]={"point":retreat,"until":clock+2.5}
             parking.erase(id)
             slot_rotation[id] = (int(slots.get(id,0))+1)%3
             release(id)
@@ -218,6 +211,65 @@ func step(id: int, delta: float) -> void:
             adapter.targets.erase(id)
             goals.erase(id)
             blocked[id] = 0.0
-            immobile_seconds[id]=0.0
             intents[id] = "yielding"
             adapter.preview.session.events.append({"source":"navigation","action":"deck_repath","actor":id,"elapsed":clock,"position":actor.position,"held":sim.carried(id),"reason":"no_route_progress","physical_retreat":yields.has(id)})
+
+func escape_point(id: int,heading: Vector3) -> Vector3:
+    var actor: CampPhysicalMotor=adapter.preview.cast[id]
+    var rejected := {"short_motion":0,"bounds":0,"floor":0,"occupied":0,"accepted":0}
+    escape_debug[id]=rejected
+    var shape := CapsuleShape3D.new()
+    shape.radius=CampPhysicalMotor.RADIUS
+    shape.height=1.69
+    var directions: Array[Vector3]=[-heading,Vector3(heading.z,0,-heading.x),Vector3(-heading.z,0,heading.x)]
+    for index in 8: directions.append(Vector3(sin(index*TAU/8),0,cos(index*TAU/8)))
+    for direction in directions:
+        var motion := direction*.95
+        var collision := KinematicCollision3D.new()
+        if actor.test_move(actor.global_transform,motion,collision):
+            if collision.get_travel().length()<.25:
+                rejected.short_motion+=1
+                continue
+            motion=collision.get_travel()*.9
+        var candidate := actor.position+motion
+        # A short physical retreat may step outside a simplified nav polygon,
+        # but must stay on real, level deck and keep the full capsule clear.
+        if absf(candidate.x)>3.55 or candidate.z< -5.8 or candidate.z>8.7:
+            rejected.bounds+=1
+            continue
+        var down := PhysicsRayQueryParameters3D.create(candidate+Vector3.UP*.7,candidate-Vector3.UP*.4,1)
+        var floor_hit := adapter.preview.get_world_3d().direct_space_state.intersect_ray(down)
+        if floor_hit.is_empty() or floor_hit.normal.y<.75 or absf(floor_hit.position.y-actor.position.y)>.15:
+            rejected.floor+=1
+            continue
+        var query := PhysicsShapeQueryParameters3D.new()
+        query.shape=shape
+        query.transform.origin=Vector3(candidate.x,floor_hit.position.y+.025+.845,candidate.z)
+        query.collision_mask=1|2|4
+        query.exclude=[actor.get_rid()]
+        if not adapter.preview.get_world_3d().direct_space_state.intersect_shape(query,1).is_empty():
+            rejected.occupied+=1
+            continue
+        rejected.accepted+=1
+        return candidate
+    return Vector3.INF
+
+func register_static_contacts(actor: CampPhysicalMotor) -> void:
+    # RVO does not infer static obstacles from the navigation mesh. A blocked
+    # safe velocity must teach avoidance about the actual wall, not keep pushing it.
+    for index in actor.get_slide_collision_count():
+        var hit := actor.get_slide_collision(index)
+        var collider := hit.get_collider()
+        var normal := hit.get_normal()
+        if not collider is StaticBody3D or absf(normal.y)>.45: continue
+        var point := hit.get_position()-normal*.08
+        var key := Vector2i(roundi(point.x/.35),roundi(point.z/.35))
+        if contact_obstacles.has(key) or contact_obstacles.size()>=48: continue
+        var obstacle := NavigationObstacle3D.new()
+        obstacle.name="MeasuredStaticAvoidance"
+        obstacle.radius=.12
+        obstacle.height=1.8
+        obstacle.position=Vector3(point.x,actor.position.y,point.z)
+        obstacle.avoidance_enabled=true
+        adapter.preview.add_child(obstacle)
+        contact_obstacles[key]=obstacle

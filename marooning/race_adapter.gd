@@ -167,7 +167,7 @@ func move_npc(id: int, delta: float) -> void:
     if state.place=="deck":
         if not preview.session.wants_departure(id): return
         var gate: Vector3=preview.routes[state.tribe].deck_access
-        if not preview.scramble.simulation.carried(id).is_empty() and simulation.elapsed<float(state.collect_until)+5 and preview.scramble.simulation.eligible(id):
+        if preview.scramble.simulation.phase==MarooningScramble.Phase.SCRAMBLE_ACTIVE and not preview.scramble.simulation.carried(id).is_empty() and simulation.elapsed<preview.session.departure_time(id)+5 and preview.scramble.simulation.eligible(id):
             preview.scramble.decide(id)
             traffic.step(id,delta)
             return
