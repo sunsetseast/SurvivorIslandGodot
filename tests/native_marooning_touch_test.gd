@@ -186,6 +186,7 @@ func run() -> void:
         while preview.session.state!=MarooningSession.State.COMPLETE and preview.session.elapsed<deadline:
             var raft: Dictionary=preview.session.race.rafts[state.tribe]
             if not state.raft.is_empty():
+                if preview.hud.command=="claim_reward": await action("claim_reward")
                 if raft.state=="moored": await action("launch")
                 elif raft.state=="underway":
                     if paddles<3 or absf(fmod(preview.session.elapsed,MarooningRace.BEAT)/MarooningRace.BEAT-.5)<.04:

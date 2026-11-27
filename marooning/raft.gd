@@ -65,7 +65,7 @@ func build(members: Array, color: Color) -> void:
         pole(Vector3(0,-.3,0),.035,2.2,wood,paddle)
         block(Vector3(0,-1.45,0),Vector3(.23,.55,.06),wood,paddle)
         paddles[int(members[i])] = paddle
-    var tribal := MarooningBay.material(color)
+    var tribal := MarooningBay.material(color.darkened(.35))
     block(Vector3(0,.35,-3.5),Vector3(1,.5,.08),tribal)
     for x: float in [-2.0,2.0]:
         for z: float in [-2.0,2.0]:
@@ -96,6 +96,7 @@ func present(raft: Dictionary, actors: Dictionary, time: float, delta: float) ->
     for id: int in paddles:
         paddles[id].visible = actors[id].raft == name
         var phase := clampf((time-float(actors[id].get("stroke_at",-10)))/MarooningRace.STROKE_SECONDS,0,1)
+        if float(raft.get("reverse_remaining",0))>0: phase=1.0-phase
         var working: bool=actors[id].paddling and float(actors[id].power)>0
         paddles[id].rotation.x=lerpf(-.65,.65,phase) if working else PI/2
         paddles[id].rotation.z=(-1.0 if int(actors[id].seat_index)%2==0 else 1.0)*.55 if working else 0.0

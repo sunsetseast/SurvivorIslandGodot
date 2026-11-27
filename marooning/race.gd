@@ -49,6 +49,7 @@ func configure(config: Dictionary, roster: Dictionary, cargo: Dictionary, routes
         var shore: Vector3=route.get("shore_center",destination)
         var stop: Vector3=route.get("stop_position",destination-Vector3(0,0,8))
         rafts[tribe.id]={"id":route.raft_id,"state":"moored","position":route.raft_mount,"heading":float(route.get("heading",0)),"speed":0.0,"momentum":0.0,"velocity":Vector3.ZERO,"crew":[],"capacity":tribe.members.size(),"cargo_ids":cargo_ids,"cargo_kg":mass,"cargo_location":"raft","delivered_ids":{},"mass_kg":180.0+mass,"draft":0.0,"sync":0.0,"distance":0.0,"stop_position":stop,"destination":destination,"shore_center":shore,"shore_min_y":float(route.get("shore_min_y",-.05)),"destination_id":route.route_id,"arrived":false,"arrival_time":-1.0,"launch_time":-1.0,"launch_reason":"","decision_at":-1.0,"strategy_at":0.0,"max_speed":0.0,"peak_mass_kg":180.0+mass,"paddler_seconds":0.0,"crew_seconds":0.0,"waypoints":route.get("clearance",[]).duplicate(),"blocked_seconds":0.0,"repaths":0}
+        rafts[tribe.id]["dock_side"]=-1.0 if route.raft_mount.x<reward_point.x else 1.0
         update_mass(rafts[tribe.id])
 
 static func seat(index: int) -> Vector3:
@@ -424,44 +425,68 @@ func move_raft(tribe: String, access: Callable) -> void:
     var target: Vector3=raft.stop_position if reward_resolved() else reward_position
     var route: Array=raft.waypoints
     while not route.is_empty() and planar(raft.position,route[0])<.7: route.pop_front()
+    if route.is_empty() and reward_resolved():
+        route_around_dock(tribe)
     if not route.is_empty(): target=route[0]
     var gap := planar(raft.position,target)
     var direction: Vector3=raft.position.direction_to(target)
     for other: String in rafts:
-        if other==tribe or not route.is_empty(): continue
+        if other==tribe or (not route.is_empty() and not bool(raft.get("dock_route",false))): continue
         var offset: Vector3=raft.position-rafts[other].position
         var separation := Vector2(offset.x,offset.z).length()
         if separation>.01 and separation<10:
             direction+=offset.normalized()*(10-separation)*.24
     var desired_heading := atan2(direction.x,direction.z)
+    var reversing := float(raft.get("reverse_remaining",0))>0
+    if reversing: desired_heading=float(raft.heading)
     var turn_error := absf(angle_difference(float(raft.heading),desired_heading))
     var previous_heading := float(raft.heading)
     raft.heading=rotate_toward(float(raft.heading),desired_heading,STEP*.9)
-    var travel_speed := float(raft.momentum)*clampf(cos(turn_error),.12,1)
+    var travel_speed := float(raft.momentum)*(1.0 if reversing else clampf(cos(turn_error),.12,1))
     if reward_resolved() and route.is_empty(): travel_speed=minf(travel_speed,sqrt(maxf(0,gap)*1.1))
     var previous: Vector3=raft.position
-    var candidate := previous+Vector3(sin(float(raft.heading)),0,cos(float(raft.heading)))*minf(travel_speed*STEP,gap)
-    var blocked := not vessel_clear(tribe,candidate)
-    if not blocked and access.is_valid():
-        raft["candidate"]=candidate
-        blocked=not bool(access.call(int(raft.crew[0]) if not raft.crew.is_empty() else int(configuration.selected),"vessel"))
+    var travel := minf(travel_speed*STEP,float(raft.reverse_remaining) if reversing else gap)
+    var candidate := previous+Vector3(sin(float(raft.heading)),0,cos(float(raft.heading)))*travel*(-1.0 if reversing else 1.0)
+    var blocked := not raft_motion_clear(tribe,candidate,access)
+    var contacted := blocked
+    if blocked and absf(angle_difference(previous_heading,float(raft.heading)))>.00001:
+        # A stern sweep can block turning while the current heading is safe.
+        # Keep actual forward clearance instead of wedging both nearby hulls.
+        raft.heading=previous_heading
+        candidate=previous+Vector3(sin(previous_heading),0,cos(previous_heading))*travel*(-1.0 if reversing else 1.0)
+        blocked=not raft_motion_clear(tribe,candidate,access)
     if not blocked: raft.position=candidate
     else:
         raft.momentum=0.0
         raft.heading=previous_heading
+        if reversing: raft.reverse_remaining=0.0
     if not blocked: raft.momentum=minf(float(raft.momentum),travel_speed)
     raft.velocity=(raft.position-previous)/STEP
     var actual := (raft.position as Vector3).distance_to(previous)
     raft.speed=actual/STEP
     raft.distance+=actual
+    if reversing:
+        raft.reverse_remaining=maxf(0,float(raft.reverse_remaining)-actual)
+        if float(raft.reverse_remaining)<.02:
+            raft.reverse_remaining=0.0
+            raft.momentum=0.0
     raft.max_speed=maxf(float(raft.max_speed),actual/STEP)
-    raft.blocked_seconds=float(raft.blocked_seconds)+STEP if blocked else 0.0
-    if float(raft.blocked_seconds)>2.0:
+    # Tiny successful collision-boundary steps are not meaningful route progress.
+    if not raft.has("progress_position"): raft["progress_position"]=previous
+    raft["collision_seen"]=bool(raft.get("collision_seen",false)) or contacted
+    raft.blocked_seconds=float(raft.blocked_seconds)+STEP
+    if float(raft.blocked_seconds)>=3.0:
         # A real outboard detour, not relocation or a fictitious distance award.
-        if raft.repaths<3:
-            raft.waypoints.push_front((raft.position as Vector3)+Vector3(-5.5 if raft.position.x<0 else 5.5,0,0))
+        if not reversing and bool(raft.collision_seen) and contributors>0 and planar(raft.position,raft.progress_position)<.35 and raft.repaths<3:
+            # Backwater uses the same accepted stroke force, continuous hull
+            # collision checks and actual distance. Clearance is not relocation.
+            raft["reverse_remaining"]=3.5
+            raft.momentum=0.0
+            raft.repaths+=1
+            event("vessel_backwater",int(raft.crew[0]))
         raft.blocked_seconds=0.0
-        raft.repaths+=1
+        raft.progress_position=raft.position
+        raft.collision_seen=false
     if reward_resolved() and route.is_empty() and gap<2.8:
         raft.arrived=true
         raft.state="grounded"
@@ -471,6 +496,33 @@ func move_raft(tribe: String, access: Callable) -> void:
         raft.arrival_time=elapsed
         assign_unloading(tribe)
         if not raft.crew.is_empty(): event("raft_landed",int(raft.crew[0]))
+
+func raft_motion_clear(tribe: String, candidate: Vector3, access: Callable) -> bool:
+    if not vessel_clear(tribe,candidate): return false
+    if not access.is_valid(): return true
+    var raft: Dictionary=rafts[tribe]
+    raft["candidate"]=candidate
+    return bool(access.call(int(raft.crew[0]) if not raft.crew.is_empty() else int(configuration.selected),"vessel"))
+
+func route_around_dock(tribe: String) -> void:
+    var raft: Dictionary=rafts[tribe]
+    var start: Vector3=raft.position
+    var finish: Vector3=raft.stop_position
+    var segment := Vector2(finish.x-start.x,finish.z-start.z)
+    if segment.length_squared()<.01 or start.z>=reward_position.z+11: return
+    var offset := Vector2(reward_position.x-start.x,reward_position.z-start.z)
+    var nearest := Vector2(start.x,start.z)+segment*clampf(offset.dot(segment)/segment.length_squared(),0,1)
+    # Dock half-width2.5m plus the rotating raft corner4.6m and clearance.
+    if nearest.distance_to(Vector2(reward_position.x,reward_position.z))>=9: return
+    var side := float(raft.dock_side)
+    # Independent resolved-reward lanes prevent two same-side hulls converging
+    # on one intermediate point. This cannot affect the contested reward race.
+    var lane := 9.5+float(rafts.keys().find(tribe))*10.5
+    var outboard := reward_position.x+side*lane
+    raft["dock_route"]=true
+    raft.waypoints.append(Vector3(outboard,start.y,start.z))
+    raft.waypoints.append(Vector3(outboard,start.y,reward_position.z+11))
+    if not raft.crew.is_empty(): event("vessel_dock_clearance",int(raft.crew[0]))
 
 static func planar(a: Vector3,b: Vector3) -> float:
     return Vector2(a.x-b.x,a.z-b.z).length()

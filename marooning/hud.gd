@@ -28,8 +28,8 @@ func _ready() -> void:
     secondary=button("secondary",func() -> void: execute(second_command))
     tertiary=button("tertiary",func() -> void: execute(third_command))
     button("menu",func() -> void: menu_open=not menu_open).text="Menu"
-    button("exit",preview._exit).text="Exit preview"
-    button("restart",func() -> void: preview.call_deferred("restart_scramble")).text="Restart preview"
+    button("exit",preview._exit).text="Exit"
+    button("restart",func() -> void: preview.call_deferred("restart_scramble")).text="Restart"
     layout_safe(Rect2(Vector2.ZERO,get_viewport_rect().size))
 func label(font_size: int) -> Label:
     var control := Label.new()
@@ -141,7 +141,7 @@ func _resolve_state() -> void:
             var pending := false
             for other_id in other_tribe.members: pending=pending or not race.actors[int(other_id)].arrived
             rivals_pending+=int(pending)
-        message.text="Your tribe and %d cargo items reached shore. %d rival tribes unresolved at this boundary.\nPreview boundary · Day 1 continues in Phase 4D.4. Walk, look, restart or exit." % [raft.delivered_ids.size(),rivals_pending]
+        message.text="%d cargo ashore · %d rivals still travelling.\nPreview complete · Day 1 follows in Phase 4D.4." % [raft.delivered_ids.size(),rivals_pending]
         return
     if preview.race.transitions.has(id) or race.pending.has(id):
         primary.hide()
@@ -154,11 +154,14 @@ func _resolve_state() -> void:
             message.text="Crew %d/%d · leaving locks your basket. Crew decides after encouragement." % [raft.crew.size(),raft.capacity]
         elif raft.state=="underway":
             command=bind_action(primary,"paddle","Paddle") if actor.paddling else bind_action(primary,"rest","Begin paddling")
+            if not race.reward_resolved() and actor.position.distance_to(preview.layout.reward)<=4.5 and preview.race.access(id,"claim"):
+                command=bind_action(primary,"claim_reward","Claim fishing reward")
             second_command=bind_action(secondary,"rest","Rest") if actor.paddling else ""
             third_command=bind_action(tertiary,"jump_off","Jump off")
             meter.visible=actor.paddling
             banner.text="%.1f m/s · Crew %d · Sync %d%%" % [raft.speed,raft.crew.size(),float(raft.sync)*100]
             message.text="Tap at the center · "+race.feedback
+            if float(raft.get("reverse_remaining",0))>0: message.text="Backwater · clearing the obstacle"
         else:
             command=bind_action(primary,"jump_off","Disembark")
             message.text="Landing · bring your cargo ashore"
