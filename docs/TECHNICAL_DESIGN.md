@@ -571,7 +571,9 @@ meaningful events retain order. Navigation repath diagnostics stay transient. No
 
 The camp-v1 RNG seeds a fresh Godot RNG with the integer represented by the first
 15 SHA-256 hex digits of UTF-8 `survivor:camp-v1:` plus the original canonical seed
-string. Its state continues camp scheduling; the saved seed stays unchanged. Both
+string. Its state continues camp scheduling; the saved seed stays unchanged. Historical continuous measurements use canonical decimal strings (nine fractional
+digits) to prevent Godot JSON parse/write drift; quantities, masses and counts stay
+numeric. Both
 marooning RNG states are exact signed decimal strings in history. Catalog roster
 attributes/default runtime values remain unchanged. Fire starts unlit at level 0;
 shelter level is 0 (existing geometry is a development placeholder without benefits).

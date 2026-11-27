@@ -900,7 +900,7 @@ func _confirm_season() -> void:
         _slots(true)
 
 func _season_storage_message() -> String:
-    return "Account season · Local checkpoints; marooning cloud support pending" if cloud.store != null else "Guest season · Saved locally. Sign in and explicitly import to sync."
+    return "Account season · Local checkpoints; marooning cloud support pending" if cloud.store != null else "Guest season · Saved locally. Cloud support for new seasons is pending."
 
 func _open_marooning() -> void:
     var config := division.configuration(contestant_catalog, selection_setup)

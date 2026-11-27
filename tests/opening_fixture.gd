@@ -76,7 +76,8 @@ static func session(config_value: Dictionary, cast: SurvivorContestantCatalog, e
         sim.scramble.request(enemy, "load", "rice-01")
         sim.elapsed += 3
         sim.scramble.advance_to(sim.elapsed)
-    sim.elapsed = 170
+    sim.elapsed = 170.0 + 1.0 / 60.0
+    sim.race.actors[int(config_value.selected)].fatigue = .123456789123
     sim.scramble.advance_to(sim.elapsed)
     sim.race.elapsed = sim.elapsed
     if winner == "unclaimed":

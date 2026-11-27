@@ -73,6 +73,7 @@ func walk(point: Vector3,tolerance := .6,maximum := 25.0,board_near := false) ->
         var power := clampf(difference.length()/2.0,.28,1)
         drag(41,home+Vector2(local.x,local.z)*preview.touch.radius*(.13+.87*power))
         await physics_frame
+        if not is_instance_valid(preview): return true
         if preview.session.elapsed>=end: break
     touch(41,home,false)
     move_down=false

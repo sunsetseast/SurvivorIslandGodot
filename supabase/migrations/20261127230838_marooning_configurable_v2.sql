@@ -9,6 +9,13 @@ language sql immutable set search_path = '' as $$
     select coalesce(jsonb_typeof(v) = 'number' and v::text::numeric between lo and hi, false)
 $$;
 
+create function survivor_private.opening_metric(v jsonb, lo numeric, hi numeric) returns boolean
+language sql immutable set search_path = '' as $$
+    select coalesce(jsonb_typeof(v) = 'string' and length(v #>> '{}') <= 32
+        and (v #>> '{}') ~ '^-?(0|[1-9][0-9]*)([.][0-9]{1,9})?$'
+        and (v #>> '{}')::numeric between lo and hi, false)
+$$;
+
 create function survivor_private.checked_opening_v2(s jsonb) returns boolean
 language plpgsql immutable set search_path = '' as $$
 declare
@@ -42,7 +49,7 @@ begin
     if (s->'inventory_version' = '1' and s->'initialization' = '{"source":"marooning-v2","day":1,"tick":0,"first_impressions_complete":false,"rng_stream":"camp-v1"}'::jsonb
         and jsonb_typeof(s->'tribal_inventory') = 'object' and jsonb_typeof(h) = 'object'
         and h->'version' = '1' and h->>'witness_semantics' = 'proximity_candidates_only'
-        and survivor_private.opening_number(h->'elapsed',0,86400)
+        and survivor_private.opening_metric(h->'elapsed',0,86400)
         and jsonb_typeof(h->'supply_rng_state') = 'string' and (h->>'supply_rng_state')::bigint::text = h->>'supply_rng_state'
         and jsonb_typeof(h->'travel_rng_state') = 'string' and (h->>'travel_rng_state')::bigint::text = h->>'travel_rng_state') is not true then return false; end if;
     if (select count(*) from jsonb_object_keys(h)) <> 12 then return false; end if;
@@ -72,7 +79,7 @@ begin
                 and jsonb_typeof(row->'actor') = 'string' and (row->>'actor' = '0' or membership ? (row->>'actor'))
                 and jsonb_typeof(row->'unloader') = 'string' and (row->>'unloader' = '0' or membership ? (row->>'unloader'))
                 and row->>'location' in ('ship','loading','raft','carried','shore')
-                and survivor_private.opening_number(row->'secured_at',-1,elapsed)) is not true then return false; end if;
+                and survivor_private.opening_metric(row->'secured_at',-1,elapsed)) is not true then return false; end if;
             if (select count(*) from jsonb_object_keys(row)) <> 11 then return false; end if;
             if row->'state' = '4' then
                 t := row->>'tribe';
@@ -89,9 +96,9 @@ begin
         r := h->'contributions'->id;
         if (jsonb_typeof(row) = 'object' and row->>'tribe' = t
             and jsonb_typeof(row->'arrived') = 'boolean' and jsonb_typeof(row->'recovered') = 'boolean'
-            and survivor_private.opening_number(row->'fatigue',0,1)
-            and survivor_private.opening_number(row->'arrival_time',-1,elapsed)
-            and survivor_private.opening_number(row->'left_deck_at',-1,elapsed)
+            and survivor_private.opening_metric(row->'fatigue',0,1)
+            and survivor_private.opening_metric(row->'arrival_time',-1,elapsed)
+            and survivor_private.opening_metric(row->'left_deck_at',-1,elapsed)
             and ((row->'arrived' = 'true') = ((row->>'arrival_time')::numeric >= 0))
             and (t <> own or row->'arrived' = 'true') and jsonb_typeof(r) = 'object') is not true then return false; end if;
         if (select count(*) from jsonb_object_keys(row)) <> 18 or (select count(*) from jsonb_object_keys(r)) > 64 then return false; end if;
@@ -99,7 +106,7 @@ begin
             if survivor_private.checkpoint_integer(row->key,0,1000000) is null then return false; end if;
         end loop;
         foreach key in array array['swim_distance','force_total','impulse_total_ns','impulse_delivered_ns','impulse_cancelled_ns'] loop
-            if not survivor_private.opening_number(row->key,0,1000000000000) then return false; end if;
+            if not survivor_private.opening_metric(row->key,0,1000000000000) then return false; end if;
         end loop;
         for key,item in select * from jsonb_each(r) loop
             if length(key) > 64 or survivor_private.checkpoint_integer(item,0,1000000) is null then return false; end if;
@@ -108,8 +115,8 @@ begin
     for tribe in select value from jsonb_array_elements(config->'tribes') loop
         t := tribe->>'id'; row := h->'transport'->t;
         if (jsonb_typeof(row) = 'object' and jsonb_typeof(row->'arrived') = 'boolean'
-            and survivor_private.opening_number(row->'arrival_time',-1,elapsed)
-            and survivor_private.opening_number(row->'launch_time',-1,elapsed)
+            and survivor_private.opening_metric(row->'arrival_time',-1,elapsed)
+            and survivor_private.opening_metric(row->'launch_time',-1,elapsed)
             and ((row->'arrived' = 'true') = ((row->>'arrival_time')::numeric >= 0))
             and row->>'launch_reason' in ('','collection_closed','crew_encouraged','crew_ready')
             and jsonb_typeof(row->'delivered_ids') = 'array' and row->>'resolution' in ('observed','abstract_transport')
@@ -138,7 +145,7 @@ begin
     end loop;
     r := h->'reward';
     if (r->>'id' = 'fishing-equipment-preview' and r->>'status' in ('claimed','unclaimed') and r->'mass_kg' = '8'
-        and survivor_private.opening_number(r->'time',0,elapsed) and jsonb_typeof(r->'secured') = 'boolean'
+        and survivor_private.opening_metric(r->'time',0,elapsed) and jsonb_typeof(r->'secured') = 'boolean'
         and jsonb_typeof(r->'actor') = 'string' and (r->>'actor' = '0' or membership ? (r->>'actor'))
         and jsonb_typeof(r->'carrier') = 'string' and (r->>'carrier' = '0' or membership ? (r->>'carrier'))) is not true then return false; end if;
     if (select count(*) from jsonb_object_keys(r)) <> 10 then return false; end if;
@@ -169,7 +176,7 @@ begin
     if jsonb_typeof(h->'events') is distinct from 'array' or jsonb_array_length(h->'events') > 2048
         or jsonb_typeof(h->'recoveries') is distinct from 'array' or jsonb_array_length(h->'recoveries') > 128 then return false; end if;
     for e in select value from jsonb_array_elements(h->'events') loop
-        if (e->>'source' in ('supplies','travel') and survivor_private.opening_number(e->'at',prior_at,elapsed)
+        if (e->>'source' in ('supplies','travel') and survivor_private.opening_metric(e->'at',prior_at,elapsed)
             and jsonb_typeof(e->'actor') = 'string' and membership ? (e->>'actor')
             and jsonb_typeof(e->'action') = 'string' and length(e->>'action') between 1 and 64
             and jsonb_typeof(e->'witness_candidates') = 'array' and jsonb_array_length(e->'witness_candidates') <= 17) is not true then return false; end if;
@@ -187,7 +194,7 @@ begin
     end loop;
     for e in select value from jsonb_array_elements(h->'recoveries') loop
         if (jsonb_typeof(e) = 'object' and jsonb_typeof(e->'actor') = 'string' and membership ? (e->>'actor')
-            and survivor_private.opening_number(e->'at',0,elapsed) and jsonb_typeof(e->'reason') = 'string' and length(e->>'reason') <= 128
+            and survivor_private.opening_metric(e->'at',0,elapsed) and jsonb_typeof(e->'reason') = 'string' and length(e->>'reason') <= 128
             and survivor_private.checkpoint_integer(e->'attempts',0,10000) is not null
             and e->'objective_awarded' = 'false' and jsonb_typeof(e->'reward_carrier') = 'boolean'
             and jsonb_typeof(e->'ordinary_cargo_set_down') = 'string' and jsonb_typeof(e->'secured_batch') = 'array'
@@ -199,7 +206,7 @@ begin
         foreach key in array array['from','to'] loop
             if jsonb_typeof(e->key) is distinct from 'array' or jsonb_array_length(e->key) <> 3 then return false; end if;
             for point in select value from jsonb_array_elements(e->key) loop
-                if not survivor_private.opening_number(point,-10000,10000) then return false; end if;
+                if not survivor_private.opening_metric(point,-10000,10000) then return false; end if;
             end loop;
         end loop;
     end loop;
@@ -252,6 +259,6 @@ end;
 $$;
 create trigger fence_opening_revision before insert on survivor_private.save_revisions
     for each row execute function survivor_private.fence_opening_revision();
-revoke all on function survivor_private.opening_number(jsonb,numeric,numeric), survivor_private.checked_opening_v2(jsonb),
+revoke all on function survivor_private.opening_metric(jsonb,numeric,numeric), survivor_private.opening_number(jsonb,numeric,numeric), survivor_private.checked_opening_v2(jsonb),
     survivor_private.checked_configurable_snapshot(text), survivor_private.checked_configurable_snapshot_v1(text),
     survivor_private.fence_opening_revision() from public, anon, authenticated, service_role;

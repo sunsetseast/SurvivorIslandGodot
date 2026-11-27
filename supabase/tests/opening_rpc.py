@@ -64,7 +64,7 @@ def generate(stage, migration):
     legacy['state']['ruleset_version']=1
     for key in ['initialization','inventory_version','tribal_inventory','opening_history']:legacy['state'].pop(key)
     check(put(sid1,wire(legacy),2)+"->>'status'='invalid'",'Old client cannot downgrade v2')
-    changed=mutated(lambda s:s['opening_history']['contestants']['1'].__setitem__('fatigue',.5))
+    changed=mutated(lambda s:s['opening_history']['contestants']['1'].__setitem__('fatigue','0.5'))
     check(put(sid1,changed,2)+"->>'status'='invalid'",'Immutable opening history')
     check(put(sid2,raw['opening-3-rival'])+"->>'status'='saved'",'V2 three-tribe create')
     check("not has_function_privilege('authenticated','survivor_private.checked_opening_v2(jsonb)','execute')",'Private validator inaccessible')

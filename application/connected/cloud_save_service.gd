@@ -52,10 +52,10 @@ static func _decode_list(data: Variant) -> Dictionary:
     return {"status": "listed", "items": data}
 
 func slot_status(index: int, entry: Dictionary) -> String:
-    if entry.get("state", {}).get("ruleset_version") == 2:
-        return "Saved locally · cloud support pending"
     if store == null:
         return "Saved locally only"
+    if entry.get("state", {}).get("ruleset_version") == 2:
+        return "Saved locally · cloud support pending"
     var sync := record(index)
     var revision := int(entry.save_revision)
     if sync.get("season") == entry.state.season_id:

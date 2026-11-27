@@ -135,8 +135,38 @@ static func build(result: Dictionary, config: Dictionary, catalog: SurvivorConte
         history.recoveries.append(row)
     var packet := {"inventory_version":1, "tribal_inventory":inventory, "opening_history":history,
         "initialization":{"source":"marooning-v2", "day":1, "tick":0, "first_impressions_complete":false, "rng_stream":"camp-v1"}}
+    _encode_metrics(history)
     packet = SurvivorContestantCatalog._integers(packet)
     return packet if valid(packet, config) else {}
+
+# Godot JSON floating-point parse/write cycles can differ by one ULP. Decimal
+# strings (nine fractional digits) keep immutable historical measurements stable.
+# Catalog quantities/masses and integer counts remain numeric; RNGs stay exact int64.
+static func _encode_metrics(h: Dictionary) -> void:
+    h.elapsed = _decimal(h.elapsed)
+    for row: Dictionary in h.dispositions.values():
+        row.secured_at = _decimal(row.secured_at)
+    for row: Dictionary in h.contestants.values():
+        for key: String in ["fatigue", "arrival_time", "left_deck_at"] + ACTOR_AMOUNTS:
+            row[key] = _decimal(row[key])
+    for row: Dictionary in h.transport.values():
+        row.arrival_time = _decimal(row.arrival_time)
+        row.launch_time = _decimal(row.launch_time)
+    h.reward.time = _decimal(h.reward.time)
+    for row: Dictionary in h.events:
+        row.at = _decimal(row.at)
+    for row: Dictionary in h.recoveries:
+        row.at = _decimal(row.at)
+        for key: String in ["from", "to"]:
+            for index in 3:
+                row[key][index] = _decimal(row[key][index])
+
+static func _decimal(value: Variant) -> String:
+    return String.num(float(value), 9) if GameStateData.number(value, -1e12, 1e12) else "invalid"
+
+static func _metric(value: Variant, low: float, high: float) -> bool:
+    return value is String and value.length() <= 32 and value.is_valid_float() \
+        and GameStateData.number(float(value), low, high) and String.num(float(value), 9) == value
 
 static func _id_text(value: Variant) -> String:
     return str(int(value)) if GameStateData.integer(value, 0, 18) else "invalid"
@@ -162,9 +192,10 @@ static func valid(packet: Dictionary, config: Dictionary) -> bool:
         return false
     var h: Dictionary = packet.opening_history
     if h.keys().size() != 12 or h.get("version") != 1 or h.get("witness_semantics") != "proximity_candidates_only" \
-            or not GameStateData.number(h.get("elapsed"), 0, MAX_SECONDS) \
+            or not _metric(h.get("elapsed"), 0, MAX_SECONDS) \
             or not GameStateData.int64_text(h.get("supply_rng_state")) or not GameStateData.int64_text(h.get("travel_rng_state")):
         return false
+    var end_time := float(h.elapsed)
     for key: String in ["dispositions", "contestants", "contributions", "transport", "reward"]:
         if h.get(key) is not Dictionary:
             return false
@@ -188,10 +219,10 @@ static func valid(packet: Dictionary, config: Dictionary) -> bool:
                 or row.get("unit") != d.unit or row.get("mass_kg") != d.mass_kg or row.get("definition_version") != 1 \
                 or not GameStateData.integer(row.get("state"), 0, 5) or not _actor(row.get("actor"), membership, true) \
                 or not _actor(row.get("unloader"), membership, true) or row.get("location") not in ["ship", "loading", "raft", "carried", "shore"] \
-                or not GameStateData.number(row.get("secured_at"), -1, h.elapsed):
+                or not _metric(row.get("secured_at"), -1, end_time):
             return false
         if row.state == MarooningScramble.State.SECURED:
-            if not expected.has(row.get("tribe")) or row.actor != "0" or row.secured_at < 0 \
+            if not expected.has(row.get("tribe")) or row.actor != "0" or float(row.secured_at) < 0 \
                     or row.unloader != "0" and membership[row.unloader] != row.tribe:
                 return false
             if row.tribe == own and row.location != "shore":
@@ -204,17 +235,17 @@ static func valid(packet: Dictionary, config: Dictionary) -> bool:
         var contributions: Variant = h.contributions.get(id)
         if row is not Dictionary or row.size() != 18 or row.get("tribe") != membership[id] \
                 or row.get("arrived") is not bool or row.get("recovered") is not bool \
-                or not GameStateData.number(row.get("fatigue"), 0, 1) \
-                or not GameStateData.number(row.get("arrival_time"), -1, h.elapsed) \
-                or not GameStateData.number(row.get("left_deck_at"), -1, h.elapsed) \
-                or row.arrived != (row.arrival_time >= 0) or membership[id] == own and not row.arrived \
+                or not _metric(row.get("fatigue"), 0, 1) \
+                or not _metric(row.get("arrival_time"), -1, end_time) \
+                or not _metric(row.get("left_deck_at"), -1, end_time) \
+                or row.arrived != (float(row.arrival_time) >= 0) or membership[id] == own and not row.arrived \
                 or contributions is not Dictionary or contributions.size() > 64:
             return false
         for key: String in ACTOR_COUNTS:
             if not GameStateData.integer(row.get(key), 0, 1000000):
                 return false
         for key: String in ACTOR_AMOUNTS:
-            if not GameStateData.number(row.get(key), 0, 1e12):
+            if not _metric(row.get(key), 0, 1e12):
                 return false
         for key: Variant in contributions:
             if key is not String or key.length() > 64 or not GameStateData.integer(contributions[key], 0, 1000000):
@@ -222,10 +253,10 @@ static func valid(packet: Dictionary, config: Dictionary) -> bool:
     for tribe: Dictionary in config.tribes:
         var row: Variant = h.transport.get(tribe.id)
         if row is not Dictionary or row.size() != 8 or row.get("arrived") is not bool \
-                or not GameStateData.number(row.get("arrival_time"), -1, h.elapsed) \
-                or not GameStateData.number(row.get("launch_time"), -1, h.elapsed) \
+                or not _metric(row.get("arrival_time"), -1, end_time) \
+                or not _metric(row.get("launch_time"), -1, end_time) \
                 or row.get("launch_reason") not in ["", "collection_closed", "crew_encouraged", "crew_ready"] \
-                or row.arrived != (row.arrival_time >= 0) or row.get("delivered_ids") is not Array \
+                or row.arrived != (float(row.arrival_time) >= 0) or row.get("delivered_ids") is not Array \
                 or row.get("resolution") not in ["observed", "abstract_transport"] \
                 or row.get("state") not in ["moored", "underway", "grounded", "regrouped"] \
                 or row.get("cargo_location") not in ["raft", "shore"] \
@@ -243,7 +274,7 @@ static func valid(packet: Dictionary, config: Dictionary) -> bool:
             return false
     var reward: Dictionary = h.reward
     if reward.size() != 10 or reward.get("id") != REWARD_ID or reward.get("status") not in ["claimed", "unclaimed"] \
-            or reward.get("mass_kg") != 8.0 or not GameStateData.number(reward.get("time"), 0, h.elapsed) \
+            or reward.get("mass_kg") != 8.0 or not _metric(reward.get("time"), 0, end_time) \
             or reward.get("secured") is not bool or not _actor(reward.get("actor"), membership, true) \
             or not _actor(reward.get("carrier"), membership, true):
         return false
@@ -281,7 +312,7 @@ static func valid(packet: Dictionary, config: Dictionary) -> bool:
     for event: Variant in h.events:
         if event is not Dictionary or event.get("source") not in ["supplies", "travel"] \
                 or event.size() != (8 if event.source == "supplies" else 5) \
-                or not GameStateData.number(event.get("at"), previous, h.elapsed) or not _actor(event.get("actor"), membership) \
+                or not _metric(event.get("at"), previous, end_time) or not _actor(event.get("actor"), membership) \
                 or event.get("action") is not String or event.action.is_empty() or event.action.length() > 64 \
                 or event.get("witness_candidates") is not Array or event.witness_candidates.size() > 17:
             return false
@@ -296,7 +327,7 @@ static func valid(packet: Dictionary, config: Dictionary) -> bool:
             return false
     for recovery: Variant in h.recoveries:
         if recovery is not Dictionary or recovery.size() != 10 or not _actor(recovery.get("actor"), membership) \
-                or not GameStateData.number(recovery.get("at"), 0, h.elapsed) or recovery.get("reason") is not String \
+                or not _metric(recovery.get("at"), 0, end_time) or recovery.get("reason") is not String \
                 or recovery.reason.length() > 128 or not GameStateData.integer(recovery.get("attempts"), 0, 10000) \
                 or recovery.get("objective_awarded") != false or recovery.get("reward_carrier") is not bool \
                 or recovery.get("ordinary_cargo_set_down") is not String or recovery.get("secured_batch") is not Array:
@@ -310,7 +341,7 @@ static func valid(packet: Dictionary, config: Dictionary) -> bool:
             if recovery.get(key) is not Array or recovery[key].size() != 3:
                 return false
             for coordinate: Variant in recovery[key]:
-                if not GameStateData.number(coordinate, -10000, 10000):
+                if not _metric(coordinate, -10000, 10000):
                     return false
     return true
 
