@@ -549,3 +549,32 @@ Deferred to 4D.2: scramble timing, pickup/throw, cargo ownership, release/paddli
 competitive AI, reward claims, social consequences, camp inventory and save schema.
 No frame-rate claim is established by headless tests; browser review records wall-clock
 render intervals only, and physical iPhone performance remains owner-tested.
+
+## Phase 4D.4 permanent opening
+
+Configured New Game freezes its validated configuration, selected contestant,
+catalog fingerprint, original seed, proposed season ID, local slot and ownership
+namespace before starting the existing marooning. Arrival validates its version 2
+result and shows earned supplies. Begin Day 1 initializes the authoritative season
+and writes/read-verifies the first checkpoint before LocationManager enters Tonsai.
+Storage failures retain the completed handoff in memory for retry. A committed
+checkpoint remains available through Continue even if camp loading fails.
+
+New marooning seasons use configurable ruleset version 2 within envelope schema 2.
+SeasonSimulation owns individual tribal inventory records keyed by stable tribe ID;
+quantities shown in the UI are derived. Opening history keeps original quantities,
+masses, dispositions, attributed contributions/events and actual recovery/arrival
+facts independently of remaining stock. Unresolved rival transport is explicitly
+abstract; proximity witness candidates are not confirmed observations. Repeated
+stroke events are represented by their per-contestant counts/grades/impulses;
+meaningful events retain order. Navigation repath diagnostics stay transient. No trust or First Impressions event is applied.
+
+The camp-v1 RNG seeds a fresh Godot RNG with the integer represented by the first
+15 SHA-256 hex digits of UTF-8 `survivor:camp-v1:` plus the original canonical seed
+string. Its state continues camp scheduling; the saved seed stays unchanged. Both
+marooning RNG states are exact signed decimal strings in history. Catalog roster
+attributes/default runtime values remain unchanged. Fire starts unlit at level 0;
+shelter level is 0 (existing geometry is a development placeholder without benefits).
+Version 1 and technical saves gain no fabricated opening data. V2 account saves stay
+local with an explicit cloud-support-pending status until production compatibility
+is separately verified. The migration is prepared and tested only in isolation.

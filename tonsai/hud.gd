@@ -32,7 +32,10 @@ func _ready() -> void:
     touch = CampTouch.new()
     touch.motor = camp.player
     add_child(touch)
-    banner = _label("TONSAI BEACH", 26)
+    var view := camp.session.view("tonsai")
+    banner = _label("DAY 1 — CAMP PHASE" if view.get("marooning_season", false) else "TONSAI BEACH", 26)
+    if view.get("marooning_season", false):
+        banner.add_theme_color_override("font_color", Color(view.tribe_color))
     add_child(banner)
     stats = _label("", 15)
     add_child(stats)
@@ -126,6 +129,9 @@ func _button(value: String, action: Callable) -> Button:
     return button
 
 func refresh() -> void:
+    var view := camp.session.view("tonsai")
+    if view.get("marooning_season", false):
+        banner.text = "DAY %d — CAMP PHASE" % int(view.day)
     var person := camp.nearby()
     nearby_actor = person.contestant if is_instance_valid(person) else &""
     run_button.text = "Run" if camp.player.run_toggled else "Walk"

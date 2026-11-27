@@ -6,6 +6,7 @@ var failures := 0
 var captures := {}
 var move_down := false
 var record_dir := ""
+var permanent_mode := false
 func _initialize() -> void: call_deferred("run")
 func check(value: bool,label: String) -> void:
     if not value:
@@ -33,12 +34,13 @@ func tap(control: Button) -> bool:
     await frames(3)
     return true
 func action(command: String) -> bool:
+    if not is_instance_valid(preview): return false
     preview.hud.update_state()
     for pair: Array in [[preview.hud.command,preview.hud.primary],[preview.hud.second_command,preview.hud.secondary],[preview.hud.third_command,preview.hud.tertiary]]:
         if pair[0]==command: return await tap(pair[1])
     return false
 func capture(label: String,view := "follow") -> void:
-    if record_dir.is_empty() or DisplayServer.get_name()=="headless": return
+    if permanent_mode or record_dir.is_empty() or DisplayServer.get_name()=="headless" or not is_instance_valid(preview): return
     preview._capture([view])
     await process_frame
     RenderingServer.force_draw(true)
@@ -52,6 +54,7 @@ func walk(point: Vector3,tolerance := .6,maximum := 25.0,board_near := false) ->
     var end := preview.session.elapsed+maximum
     var reached := false
     for frame in int(maximum*60)+180:
+        if not is_instance_valid(preview): return true
         var actor: Dictionary=preview.session.race.actors[int(preview.configuration.selected)]
         if board_near and preview.session.race.can_board(int(preview.configuration.selected)):
             touch(41,home,false)
@@ -74,6 +77,7 @@ func walk(point: Vector3,tolerance := .6,maximum := 25.0,board_near := false) ->
     touch(41,home,false)
     move_down=false
     await frames(2)
+    if not is_instance_valid(preview): return true
     print("TOUCH_WALK goal=",point," position=",preview.player.position," clock=",preview.session.elapsed," reached=",reached)
     return reached
 func choose(count_value: int) -> bool:
@@ -103,10 +107,33 @@ func choose(count_value: int) -> bool:
     check(await tap(app._actions.standard),"Standard season touch")
     check(await tap(app._actions["Two Tribes" if count_value==2 else "Three Tribes"]),"Format touch")
     await frames(8)
-    check(await tap(app._actions.marooning),"Private marooning touch")
+    if permanent_mode:
+        for attempt in 14:
+            var rect := app._account_scroll.get_global_rect()
+            if rect.has_point(app._actions.confirm.get_global_rect().get_center()): break
+            var start := rect.position+rect.size*Vector2(.5,.8)
+            touch(91,start,true)
+            for step in 10:
+                drag(91,start-Vector2(0,float(step+1)*rect.size.y*.055))
+                await frames(2)
+            touch(91,start-Vector2(0,rect.size.y*.55),false)
+            await frames(8)
+        check(await tap(app._actions.confirm),"Confirm permanent season touch")
+        await frames(5)
+        if not app._actions.has("slot1"):
+            check(false,"Tribe confirmation must reach empty slots")
+            return false
+        check(await tap(app._actions.slot1),"Empty slot touch starts marooning")
+        check(app.saves.inspect(1).status=="empty","No permanent save before arrival")
+    else:
+        check(await tap(app._actions.marooning),"Private marooning touch")
     await frames(10)
     if not is_instance_valid(app._marooning): return false
     preview=app._marooning
+    if permanent_mode and not OS.get_environment("OPENING_RESULT_PATH").is_empty():
+        preview.completed.connect(func(result: Dictionary) -> void:
+            var file := FileAccess.open(OS.get_environment("OPENING_RESULT_PATH"),FileAccess.WRITE)
+            file.store_var(result))
     check(preview.session.elapsed==0,"Intro does not consume gameplay time")
     check(await action("skip"),"Skip introduction touch")
     check(await action("start"),"Start touch")
@@ -114,10 +141,18 @@ func choose(count_value: int) -> bool:
     return preview.session.state==MarooningSession.State.ACTIVE
 func run() -> void:
     record_dir=OS.get_environment("MAROONING_CAPTURE_DIR")
+    permanent_mode=OS.get_environment("PERMANENT_OPENING_TOUCH")=="1"
+    if permanent_mode and OS.get_environment("OPENING_RENDER_CAPTURES")=="1":
+        RenderingServer.render_loop_enabled=false
     root.size=Vector2i(956,440)
     root.content_scale_size=Vector2i(1280,720)
     app=load("res://application/game_app.tscn").instantiate()
     root.add_child(app)
+    if permanent_mode:
+        var isolated := LocalDataStore.new("permanent-touch-"+GameStateData.new_id())
+        app.profile=PlayerProfile.new(isolated)
+        app.saves=LocalSaveProvider.new(isolated)
+        app._main()
     await frames(30)
     var formats := [2,3]
     if not OS.get_environment("MAROONING_TOUCH_FORMAT").is_empty(): formats=[int(OS.get_environment("MAROONING_TOUCH_FORMAT"))]
@@ -184,7 +219,7 @@ func run() -> void:
         var cleared_grounded_hull := false
         var paddles := 0
         var deadline := preview.session.elapsed+300
-        while preview.session.state!=MarooningSession.State.COMPLETE and preview.session.elapsed<deadline:
+        while is_instance_valid(preview) and preview.session.state!=MarooningSession.State.COMPLETE and preview.session.elapsed<deadline:
             var raft: Dictionary=preview.session.race.rafts[state.tribe]
             if not state.raft.is_empty():
                 if preview.hud.command=="claim_reward": await action("claim_reward")
@@ -217,8 +252,11 @@ func run() -> void:
                     cleared_grounded_hull=true
                 var goal := preview.session.race.actor_objective(selected)
                 await walk(goal,1.5,3)
-                if preview.hud.command=="claim_reward": await action("claim_reward")
+                if is_instance_valid(preview) and preview.hud.command=="claim_reward": await action("claim_reward")
             await frames(3)
+        if permanent_mode:
+            await finish_permanent(count_value)
+            break
         check(preview.session.state==MarooningSession.State.COMPLETE,"Full touch journey reaches summary "+str(count_value))
         check(preview.has_meta("marooning_result"),"Version2 transient result")
         check(preview.session.recoveries.is_empty(),"Representative touch journey needs no exceptional recovery")
@@ -246,3 +284,55 @@ func run() -> void:
     if DisplayServer.get_name()!="headless": RenderingServer.force_draw(true)
     print("Native UI touch acceptance: ",failures," failures")
     quit(1 if failures else 0)
+
+func capture_app(label: String) -> void:
+    if record_dir.is_empty() or DisplayServer.get_name()=="headless": return
+    await frames(3)
+    RenderingServer.force_draw(true)
+    root.get_texture().get_image().save_png(record_dir+"/"+label+".png")
+
+func finish_permanent(count_value: int) -> void:
+    await frames(5)
+    check(app.screen==SurvivorGameApp.Screen.ARRIVAL and not is_instance_valid(preview),"Real journey reaches permanent arrival summary and releases scene")
+    if app.screen!=SurvivorGameApp.Screen.ARRIVAL: return
+    check(app._completed_opening.opening_history.dispositions.size()==50,"Real journey preserves all fifty dispositions")
+    print("PERMANENT_TOUCH_OPENING bytes=",JSON.stringify(app._completed_opening).length()," events=",app._completed_opening.opening_history.events.size())
+    await capture_app("arrival-summary")
+    check(await tap(app._actions.begin_day1),"Begin Day 1 touch")
+    await frames(30)
+    check(app.session!=null and app.locations.camp!=null,"Real journey commits and loads Day 1")
+    if app.session==null: return
+    var opening: Dictionary=app.session.checkpoint().opening_history
+    check(app.locations.camp.inhabitants.size()==18/count_value-1,"Actual tribemates spawned")
+    await capture_app("day1-camp")
+    var camp := app.locations.camp
+    for camera_steering: bool in [false,true]:
+        camp.player.camera_relative_steering=camera_steering
+        var before := camp.player.position
+        var old_yaw := camp.player.yaw
+        var home := camp.hud.touch.home()
+        var look := Vector2(root.get_visible_rect().size.x*.58,root.get_visible_rect().size.y*.45)
+        touch(41,home,true)
+        touch(92,look,true)
+        for frame in 30:
+            drag(41,home+Vector2(0,-camp.hud.touch.radius*.75))
+            drag(92,look+Vector2(frame*2.0,0))
+            await physics_frame
+        touch(41,home,false)
+        touch(92,look,false)
+        check(camp.player.position.distance_to(before)>.05 and absf(camp.player.yaw-old_yaw)>.01,"Normal two-thumb camp move/orbit in steering mode "+str(camera_steering))
+    check(await tap(app._actions.supplies),"Tribal Supplies touch")
+    await capture_app("tribal-supplies")
+    check(await tap(app._actions.back),"Return to camp touch")
+    check(await tap(app._actions.menu),"Save and Main Menu touch")
+    await frames(5)
+    check(await tap(app._actions.continue),"Continue permanent season touch")
+    check(app.session!=null and app.session.checkpoint().opening_history==opening,"Continue retains complete opening")
+    check(await tap(app._actions.menu),"Return after Continue")
+    check(await tap(app._actions.load),"Load Game touch")
+    await capture_app("persisted-season-load")
+    check(await tap(app._actions.slot1),"Load saved season touch")
+    check(app.session!=null and app.session.checkpoint().opening_history==opening,"Load retains complete opening")
+    app._exit_session()
+    app.saves.erase(1)
+    print("Permanent full touch path: complete")

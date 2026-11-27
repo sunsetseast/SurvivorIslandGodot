@@ -54,6 +54,11 @@ func _write(slot: int, state: Dictionary, expected_revision: int, replacement: b
     if not replacement and previous.status == "valid" and (previous.state.season_id != state.season_id \
             or int(previous.state.revision) > int(state.revision)):
         return {"status": "conflict"}
+    if not replacement and previous.status == "valid" and previous.state.get("ruleset_version") == 2:
+        if state.get("ruleset_version") != 2 or state.get("configuration") != previous.state.get("configuration") \
+                or state.get("opening_history") != previous.state.get("opening_history") \
+                or state.get("initialization") != previous.state.get("initialization"):
+            return {"status":"conflict"}
     var next_revision := expected_revision + 1
     var raw := SaveCodec.encode(state, next_revision, int(Time.get_unix_time_from_system()))
     if SaveCodec.decode(raw).status != "valid":

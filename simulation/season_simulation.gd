@@ -10,6 +10,8 @@ const MAX_TICK := 1_000_000_000
 const REACH := 2.65
 
 var configuration: Dictionary = {}
+var ruleset_version := 1
+var opening: Dictionary = {}
 var season_id: String
 var player_id: String
 var roster: Dictionary
@@ -113,10 +115,18 @@ func project(principal: String, location: String, include_knowledge := true) -> 
     for id: String in camp.people:
         var person: Dictionary = camp.people[id]
         cast[id] = {"name": roster[id].name, "activity": person.activity, "stage": person.stage}
+    var tribe_name: String = roster[actor].tribe
+    var tribe_color := "white"
+    for tribe: Dictionary in configuration.get("tribes", []):
+        if tribe.id == roster[actor].tribe:
+            tribe_name = tribe.name
+            tribe_color = tribe.color
     return {"season_id": season_id, "revision": revision, "tick": tick, "day": day(),
         "phase": "camp", "cast": cast, "objects": camp.objects.duplicate(true),
         "controlled": actor, "pose": pose.duplicate(true),
-        "knowledge": camp.people[actor].journal.duplicate(true) if include_knowledge else []}
+        "knowledge": camp.people[actor].journal.duplicate(true) if include_knowledge else [],
+        "tribe":roster[actor].tribe, "tribe_name":tribe_name, "tribe_color":tribe_color, "supplies":opening.get("tribal_inventory", {}).get(roster[actor].tribe, {}).duplicate(true),
+        "marooning_season":ruleset_version == 2}
 
 func contestant_for(principal: String) -> String:
     if not principal.is_empty():
@@ -134,18 +144,24 @@ func snapshot() -> Dictionary:
     for location: String in camps:
         world[location] = camps[location].snapshot()
     var result := {"season_id": season_id, "player_id": player_id, "ruleset": RULESET if configuration.is_empty() else SurvivorSeasonConfiguration.RULESET,
-        "ruleset_version": RULESET_VERSION, "revision": revision, "tick": tick, "day": day(),
+        "ruleset_version": ruleset_version, "revision": revision, "tick": tick, "day": day(),
         "phase": "camp", "seed": str(rng.seed), "rng_state": str(rng.state),
         "controlled": contestant_for(player_id), "roster": roster.duplicate(true),
         "tribes": tribe_locations(), "world": world, "pose": pose.duplicate(true)}
     if not configuration.is_empty():
         result["configuration"] = configuration.duplicate(true)
+    if ruleset_version == 2:
+        result.merge(opening.duplicate(true))
     return result
 
 static func restore(data: Dictionary) -> SeasonSimulation:
     var sim := SeasonSimulation.new(data.player_id, data.season_id, int(data.seed))
     if data.get("ruleset") == SurvivorSeasonConfiguration.RULESET:
         sim.configure(data.configuration, SurvivorContestantCatalog.new())
+    sim.ruleset_version = int(data.ruleset_version)
+    if sim.ruleset_version == 2:
+        for key: String in ["inventory_version", "tribal_inventory", "opening_history", "initialization"]:
+            sim.opening[key] = data[key].duplicate(true) if data[key] is Dictionary else data[key]
     # Keep the ruleset's canonical roster order across JSON encoders and migrations.
     for id: String in sim.roster:
         sim.roster[id] = data.roster[id].duplicate(true)
@@ -179,3 +195,17 @@ func configure(config: Dictionary, catalog: SurvivorContestantCatalog) -> void:
         camps[tribe.location] = CampSimulation.new()
     for id: String in roster:
         camps[roster[id].location].add(id, "")
+
+func initialize_opening(packet: Dictionary) -> bool:
+    if configuration.is_empty() or not opening.is_empty() or tick != 0 or revision != 0 or not SurvivorOpeningHandoff.valid(packet, configuration):
+        return false
+    opening = packet.duplicate(true)
+    ruleset_version = 2
+    for camp: CampSimulation in camps.values():
+        camp.objects = {"fire":{"lit":false, "construction_level":0}, "shelter":{"construction_level":0}}
+    # Domain-separated camp-v1 stream: first 15 SHA-256 hex digits of this exact
+    # UTF-8 text seed a fresh Godot RNG; copy its state while retaining original seed.
+    var camp_rng := RandomNumberGenerator.new()
+    camp_rng.seed = ("survivor:camp-v1:" + configuration.seed).sha256_text().left(15).hex_to_int()
+    rng.state = camp_rng.state
+    return true

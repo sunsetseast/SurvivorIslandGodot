@@ -1,6 +1,10 @@
 class_name MarooningPreview
 extends Node3D
 signal exited
+signal completed(result: Dictionary)
+var permanent := false
+var completion_error := ""
+var _completion_sent := false
 const Actor := preload("res://character_lab/actor.gd")
 @export var layout: MarooningLayout=preload("res://marooning/layout.tres")
 var configuration: Dictionary
@@ -204,6 +208,11 @@ func _physics_process(delta: float) -> void:
     player.locked=introducing or session.state in [MarooningSession.State.READY,MarooningSession.State.COUNTDOWN]
     scramble.update_visuals(delta)
     race.present(delta)
+    if permanent and session.state == MarooningSession.State.COMPLETE and not _completion_sent:
+        _completion_sent = true
+        _set_suspended(true)
+        player.locked = true
+        completed.emit(session.result())
     touch.set_movement(not player.raft_attached and not player.locked)
 func _set_suspended(value: bool) -> void:
     session.set_suspended(value)
@@ -236,6 +245,8 @@ func restart_scramble() -> void:
     for child in get_children(): child.free()
     cast.clear()
     actions.clear()
+    _completion_sent=false
+    completion_error=""
     session=MarooningSession.new()
     elapsed=0
     introducing=true

@@ -307,7 +307,8 @@ func _process(delta: float) -> void:
     var draws := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME)
     var primitives := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME)
     var day: int = local_host.current_day() if local_host != null else int(session.view(LOCATION).get("day", 1))
-    hud.stats.text = "%s · Day %d · %d FPS" % [session.view(LOCATION).cast[session.view(LOCATION).controlled].name, day, fps]
+    var projection := session.view(LOCATION)
+    hud.stats.text = "%s · %s · Day %d · %d FPS" % [projection.cast[projection.controlled].name, projection.get("tribe_name", "Tonsai"), day, fps]
     for npc in inhabitants:
         # Distant actors keep their physical schedules. Only skeletal
         # evaluation sleeps when nobody can read the pose.
