@@ -155,6 +155,26 @@ func run() -> void:
         app.saves=LocalSaveProvider.new(isolated)
         app._main()
     await frames(30)
+    if not OS.get_environment("OPENING_REPLAY_RESULT_PATH").is_empty():
+        var file := FileAccess.open(OS.get_environment("OPENING_REPLAY_RESULT_PATH"),FileAccess.READ)
+        var recorded: Dictionary=file.get_var()
+        app._configured=true
+        app.selection_setup.selected_id=int(recorded.configuration.selected)
+        app.selection_setup.information_mode=recorded.configuration.information
+        app.division.count=recorded.configuration.tribes.size()
+        app.division.seed_value=int(recorded.configuration.seed)
+        app.division.method=recorded.configuration.method
+        app.division.tribes=recorded.configuration.tribes.duplicate(true)
+        app._new(1)
+        preview=app._marooning
+        preview.completed.emit(recorded)
+        await finish_permanent(recorded.configuration.tribes.size())
+        app.queue_free()
+        await frames(4)
+        if DisplayServer.get_name()!="headless": RenderingServer.force_draw(true)
+        print("Retained real handoff input acceptance: ",failures," failures")
+        quit(1 if failures else 0)
+        return
     var formats := [2,3]
     if not OS.get_environment("MAROONING_TOUCH_FORMAT").is_empty(): formats=[int(OS.get_environment("MAROONING_TOUCH_FORMAT"))]
     for count_value in formats:

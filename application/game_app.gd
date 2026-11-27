@@ -1047,7 +1047,8 @@ func _show_supplies() -> void:
     locations.camp.player.locked = true
     var view := session.view("tonsai")
     _menu(Screen.SUPPLIES, "Tribal Supplies", SurvivorOpeningHandoff.summary(view.supplies))
-    _button("back", "Back to camp", _close_supplies)
+    var back := _button("back", "Back to camp", _close_supplies)
+    _stack.move_child(back, 1)
 
 func _close_supplies() -> void:
     if locations.camp != null:
