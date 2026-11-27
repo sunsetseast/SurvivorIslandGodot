@@ -5,7 +5,8 @@ extends RefCounted
 enum Phase { INTRODUCTION, READY, SCRAMBLE_ACTIVE, SCRAMBLE_COMPLETE }
 enum State { ABOARD, CARRIED, DROPPED, FLOATING, SECURED, ABANDONED }
 var phase := Phase.INTRODUCTION
-var duration := 120.0
+const COLLECTION_SECONDS := 60.0
+var duration := COLLECTION_SECONDS
 var elapsed := 0.0
 var tick := 0
 var configuration: Dictionary
@@ -14,18 +15,50 @@ var items: Dictionary = {}
 var actors: Dictionary = {}
 var stations: Dictionary = {}
 var openings: Array[Vector3] = []
+var unloading: Dictionary = {} # Optional physical approach positions; legacy station contract retained.
 var pending: Dictionary = {}
 var events: Array[Dictionary] = []
 var suspended := false
 var seed_value := 1
+var rng := RandomNumberGenerator.new()
+var cooldowns: Dictionary = {}
+var contributions: Dictionary = {}
+var closed_tribes: Dictionary = {}
+
+func eligible(actor: int) -> bool:
+    return actors.has(actor) and not closed_tribes.has(actors[actor].tribe) and str(actors[actor].get("place","deck")) == "deck"
+
+func close_tribe(tribe: String, at: float) -> void:
+    if closed_tribes.has(tribe): return
+    closed_tribes[tribe] = at
+    for actor: int in actors:
+        if actors[actor].tribe != tribe: continue
+        cancel(actor,"launch")
+        release_on_deck(actor,actors[actor].get("last_deck_position",actors[actor].position),"launch")
+
+func cancel(actor: int, reason: String) -> void:
+    if not pending.has(actor): return
+    var command: Dictionary = pending[actor]
+    record(actor,command.item,command.action,"cancelled_"+reason,int(command.get("victim",0)))
+    pending.erase(actor)
+
+func release_on_deck(actor: int, point: Vector3, reason: String) -> void:
+    cancel(actor,reason)
+    var id := carried(actor)
+    if id.is_empty(): return
+    items[id].state = State.DROPPED
+    items[id].actor = 0
+    items[id].position = point
+    record(actor,id,"departure_drop","success")
 
 func configure(config: Dictionary, roster: Dictionary, anchors: Array[Vector3], loading: Dictionary, access: Array[Vector3]) -> void:
     configuration = config.duplicate(true)
     seed_value = int(config.get("seed", 1))
     actors = roster.duplicate(true)
+    for actor: int in actors:
+        contributions[actor] = {}
     stations = loading.duplicate(true)
     openings = access.duplicate()
-    var rng := RandomNumberGenerator.new()
     rng.seed = seed_value
     var slots := anchors.duplicate()
     # Fisher-Yates; global RNG and rendering never influence cargo placement.
@@ -62,55 +95,103 @@ func rating(actor: int, key: String) -> float:
     return clampf(float(actors[actor].attributes.get(key, 5)), 1, 10)
 
 func request(actor: int, action: String, id: String, accessible := true) -> bool:
-    if phase != Phase.SCRAMBLE_ACTIVE or suspended or pending.has(actor) or not actors.has(actor) or not items.has(id) or not accessible:
+    var deck_drop := action=="drop" and actors.has(actor) and str(actors[actor].get("place","deck"))=="deck" and phase in [Phase.SCRAMBLE_ACTIVE,Phase.SCRAMBLE_COMPLETE]
+    if (not deck_drop and (phase != Phase.SCRAMBLE_ACTIVE or elapsed>=duration or not eligible(actor))) or suspended or pending.has(actor) or not actors.has(actor) or not items.has(id) or not accessible:
+        return false
+    if action == "throw" or (action=="steal" and float(cooldowns.get(actor,0))>elapsed):
         return false
     if not valid(actor, action, id):
         return false
     var definition: Dictionary = definitions[items[id].type]
-    var seconds: float = definition.loading_duration if action == "load" else definition.pickup_duration
-    pending[actor] = {"action":action,"item":id,"at":elapsed + seconds * clampf(1.15 - rating(actor,"dexterity") * .03,.8,1.12)}
+    var seconds: float = .8 if action == "steal" else (definition.loading_duration if action == "load" else definition.pickup_duration)
+    pending[actor] = {"action":action,"item":id,"started":elapsed,"at":elapsed + seconds * clampf(1.15 - rating(actor,"dexterity") * .03,.8,1.12)}
+    pending[actor]["victim"] = int(items[id].actor) if action == "steal" else 0
+    if action == "steal":
+        cooldowns[actor] = elapsed + 5
+        record(actor,id,action,"attempted",int(items[id].actor))
     return true
 
 func valid(actor: int, action: String, id: String) -> bool:
+    if not actors.has(actor) or not items.has(id): return false
+    if action!="drop" and not eligible(actor): return false
     var item: Dictionary = items[id]
     var point: Vector3 = actors[actor].position
+    if action == "steal":
+        var victim := int(item.actor)
+        return (pending.has(actor) or float(cooldowns.get(actor,0))<=elapsed) and carried(actor).is_empty() and item.state == State.CARRIED and victim != actor and eligible(victim) and point.distance_to(actors[victim].position) <= (2.15 if pending.has(actor) else 1.95) and float(cooldowns.get(victim,0)) <= elapsed
     if action == "pickup":
-        return carried(actor).is_empty() and item.state in [State.ABOARD,State.DROPPED] and point.distance_to(item.position) <= 1.35
+        return carried(actor).is_empty() and item.state in [State.ABOARD,State.DROPPED] and point.distance_to(item.position) <= (1.9 if pending.has(actor) else 1.75)
     if item.state != State.CARRIED or item.actor != actor:
         return false
     if action == "drop":
-        return true
+        return str(actors[actor].get("place","deck"))=="deck"
     if action == "load":
-        return point.distance_to(stations[actors[actor].tribe]) <= 1.45
-    if action == "throw":
-        for opening: Vector3 in openings:
-            if point.distance_to(opening) <= 1.3:
-                return true
+        return in_unloading_area(actor)
     return false
 
+func in_unloading_area(actor: int) -> bool:
+    var point: Vector3 = actors[actor].position
+    var tribe: String = actors[actor].tribe
+    for slot: Vector3 in unloading.get(tribe,[stations[tribe]]):
+        if absf(point.y-slot.y) < .65 and Vector2(point.x-slot.x,point.z-slot.z).length() <= (1.05 if unloading.has(tribe) else 1.45):
+            return true
+    return false
+
+func auto_deposit(access_check: Callable) -> void:
+    if unloading.is_empty(): return # Legacy callers explicitly load; physical scenes install zones.
+    # Existing in-progress commands win; a later Drop cannot replace a locked load.
+    # Sorted actors and the ordinary command processor preserve deterministic ties.
+    var ids := actors.keys()
+    ids.sort()
+    for actor: int in ids:
+        var held := carried(actor)
+        if held.is_empty() or pending.has(actor) or not in_unloading_area(actor):
+            continue
+        var clear := not access_check.is_valid() or bool(access_check.call(actor,"load",held))
+        request(actor,"load",held,clear)
+
 func advance(delta: float, access_check: Callable = Callable()) -> void:
-    if phase != Phase.SCRAMBLE_ACTIVE or suspended:
+    advance_to(elapsed+maxf(delta,0),access_check)
+
+func advance_to(game_time: float, access_check: Callable = Callable()) -> void:
+    if phase not in [Phase.SCRAMBLE_ACTIVE,Phase.SCRAMBLE_COMPLETE] or suspended:
         return
-    elapsed = minf(elapsed + maxf(delta,0), duration)
+    if phase==Phase.SCRAMBLE_ACTIVE: auto_deposit(access_check)
+    elapsed = maxf(elapsed,game_time)
     tick += 1
     var order := pending.keys()
     order.sort_custom(func(a: int,b: int) -> bool: return pending[a].at < pending[b].at if pending[a].at != pending[b].at else a < b)
     for actor: int in order:
         var command: Dictionary = pending[actor]
         # Expiry cancels unfinished actions; completions at exactly duration count.
-        if command.at > elapsed:
+        if float(command.at) > elapsed+.000001:
             continue
         var id: String = command.item
         var action: String = command.action
-        var allowed := valid(actor,action,id)
+        if action!="drop" and float(command.at)>duration+.000001 and elapsed+.000001>=duration:
+            record(actor,id,action,"expired",int(command.get("victim",0)))
+            pending.erase(actor)
+            continue
+        var allowed := valid(actor,action,id) and (action=="drop" or float(command.at)<=duration+.000001)
         if access_check.is_valid():
             allowed = allowed and access_check.call(actor,action,id)
+        var victim := int(command.get("victim",0))
+        if action == "steal":
+            allowed = allowed and items[id].actor == victim
+            if allowed:
+                var chance := clampf(.5 + (rating(actor,"dexterity") + rating(actor,"deception") - rating(victim,"awareness") - rating(victim,"dexterity")) * .035,.15,.85)
+                allowed = rng.randf() < chance
+            cooldowns[actor] = elapsed + 5
+            if allowed:
+                cooldowns[victim] = elapsed + 4
         if allowed:
             var item: Dictionary = items[id]
             item.position = actors[actor].position
             match action:
                 "pickup":
                     item.state = State.CARRIED
+                    item.actor = actor
+                "steal":
                     item.actor = actor
                 "drop":
                     item.state = State.DROPPED
@@ -119,31 +200,30 @@ func advance(delta: float, access_check: Callable = Callable()) -> void:
                     item.state = State.SECURED
                     item.tribe = actors[actor].tribe
                     item.actor = 0
-                "throw":
-                    item.state = State.FLOATING
-                    item.actor = 0
-                    var opening: Vector3 = openings[0]
-                    for candidate: Vector3 in openings:
-                        if candidate.distance_to(item.position) < opening.distance_to(item.position):
-                            opening = candidate
-                    item.position = Vector3(signf(opening.x) * (7.0 + items.keys().find(id) * .04), .15, opening.z)
             items[id] = item
-        record(actor,id,action,"success" if allowed else "invalidated")
+        record(actor,id,action,"success" if allowed else "failed",victim)
         pending.erase(actor)
-    if elapsed >= duration:
+    var all_secured := true
+    for item: Dictionary in items.values():
+        if item.state!=State.SECURED: all_secured=false
+    if phase==Phase.SCRAMBLE_ACTIVE and (elapsed+.000001 >= duration or all_secured):
         for actor: int in pending:
             record(actor,pending[actor].item,pending[actor].action,"expired")
         pending.clear()
         phase = Phase.SCRAMBLE_COMPLETE
 
-func record(actor: int, id: String, action: String, outcome: String) -> void:
+func record(actor: int, id: String, action: String, outcome: String, victim := 0) -> void:
+    var key := action + "_" + outcome
+    contributions[actor][key] = int(contributions[actor].get(key,0)) + 1
     var witnesses: Array[int] = []
     for other: int in actors:
         if other != actor and actors[other].position.distance_to(actors[actor].position) < 6:
             witnesses.append(other)
-    events.append({"tick":tick,"elapsed":elapsed,"actor":actor,"tribe":actors[actor].tribe,
+    events.append({"source":"supplies","tick":tick,"elapsed":elapsed,"actor":actor,"tribe":actors[actor].tribe,
+        "victim":victim,"victim_tribe":actors[victim].tribe if actors.has(victim) else "",
+        "against_tribemate":actors.has(victim) and actors[victim].tribe == actors[actor].tribe,
         "instance":id,"type":items[id].type,"action":action,"outcome":outcome,"nearby_witnesses":witnesses})
-    if events.size() > 512:
+    if events.size() > 8192:
         events.pop_front()
 
 func result(routes: Dictionary) -> Dictionary:
@@ -152,10 +232,11 @@ func result(routes: Dictionary) -> Dictionary:
         secured[tribe.id] = []
     var unsecured: Array[Dictionary] = []
     for item: Dictionary in items.values():
+        var row := item.duplicate(true)
+        row.merge({"mass_kg":definitions[item.type].mass_kg,"quantity":definitions[item.type].quantity,"unit":definitions[item.type].unit,"definition_version":1},true)
         if item.state == State.SECURED:
-            secured[item.tribe].append(item.duplicate(true))
+            secured[item.tribe].append(row)
         else:
-            var row := item.duplicate(true)
             if row.state == State.CARRIED:
                 row.position = actors[row.actor].position
             unsecured.append(row)
@@ -169,5 +250,5 @@ func result(routes: Dictionary) -> Dictionary:
             State.CARRIED: carried_cargo.append(row.duplicate(true))
             State.DROPPED: dropped.append(row.duplicate(true))
             _: abandoned.append(row.duplicate(true))
-    return {"floating":floating,"carried":carried_cargo,"dropped":dropped,"abandoned":abandoned,"configuration":configuration.duplicate(true),"seed":seed_value,"secured":secured,
+    return {"contributions":contributions.duplicate(true),"rng_state":rng.state,"floating":floating,"carried":carried_cargo,"dropped":dropped,"abandoned":abandoned,"configuration":configuration.duplicate(true),"seed":seed_value,"secured":secured,
         "unsecured":unsecured,"events":events.duplicate(true),"routes":routes.duplicate(true)}

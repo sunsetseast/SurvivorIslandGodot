@@ -3,163 +3,110 @@ extends Node
 var preview: MarooningPreview
 var simulation := MarooningScramble.new()
 var visuals: Dictionary = {}
-var flights: Dictionary = {}
-var previous_states: Dictionary = {}
 var targets: Dictionary = {}
 var agents: Dictionary = {}
 var brain_elapsed := 0.0
 var brain_index := 0
-var hud: Label
-var action_button: Button
-var drop_button: Button
-var start_button: Button
-var restart_button: Button
-var contextual := ""
-var nearest := ""
-var finished := false
 var stalled: Dictionary = {}
 var last_positions: Dictionary = {}
 var rejected: Dictionary = {}
-var base_configuration: Dictionary
+var traffic := MarooningDeckTraffic.new()
+var station_visuals: Dictionary = {}
+var cargo_slots: Dictionary = {}
+var carry_attachments: Dictionary = {}
 
 func _ready() -> void:
     var roster := {}
     var stations := {}
     for i in preview.configuration.tribes.size():
         var tribe: Dictionary = preview.configuration.tribes[i]
-        # Loading is handled at the rail alongside the actual raft, never at distance.
-        stations[tribe.id] = Vector3(-3.1 if i == 0 else 3.1, preview.layout.deck_y, -5.8 if i < 2 else 5)
-        var label := Label3D.new()
-        label.text = tribe.name + " · LOAD"
-        label.position = stations[tribe.id] + Vector3.UP * 1.6
-        label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-        label.modulate = Color(tribe.color)
-        preview.add_child(label)
+        stations[tribe.id] = preview.layout.collection_centres[i]
+        var station := MarooningCollectionStation.new()
+        station.build(tribe)
+        station.position = stations[tribe.id]
+        preview.add_child(station)
+        station_visuals[tribe.id] = station
     for id: int in preview.cast:
         var actor: Node3D = preview.cast[id]
         roster[id] = {"position":actor.position,"tribe":actor.get_meta("tribe_id"),"attributes":preview.catalog.get_by_id(id).attributes}
         if actor != preview.player:
             var agent := NavigationAgent3D.new()
-            agent.path_desired_distance = .25
+            agent.path_desired_distance = .5
+            agent.path_height_offset = .3
             agent.target_desired_distance = .8
             actor.add_child(agent)
             agents[id] = agent
-    var anchors: Array[Vector3] = []
-    for row in 13:
-        for x: float in [-2.65,-1.35,1.35,2.65]:
-            anchors.append(Vector3(x,preview.layout.deck_y,-4.5 + row * .98))
-    simulation.configure(preview.configuration,roster,anchors,stations,[Vector3(-3.1,preview.layout.deck_y,8),Vector3(3.1,preview.layout.deck_y,8)])
+    preview.session.configure(preview.configuration,roster,preview.layout.supply_anchors(),stations,preview.layout.deck_accesses,preview.routes,preview.layout.reward)
+    simulation=preview.session.scramble
+    preview.layout.arrange_supplies(simulation.items,simulation.seed_value)
+    for tribe: String in stations:
+        var centre: Vector3 = stations[tribe]
+        var approaches: Array[Vector3] = []
+        for offset: float in [-1.2,0.0,1.2]:
+            approaches.append(centre+Vector3(-signf(centre.x)*1.05,0,offset))
+        simulation.unloading[tribe] = approaches
+    traffic.bind(self)
     for id: String in simulation.items:
         var visual := MarooningSupplyVisual.new()
         visual.build(simulation.items[id].type)
         preview.add_child(visual)
         visual.position = simulation.items[id].position
         visuals[id] = visual
-    var layer := CanvasLayer.new()
-    add_child(layer)
-    var panel := VBoxContainer.new()
-    panel.theme = IslandTheme.create()
-    panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-    panel.position = Vector2(350,12)
-    layer.add_child(panel)
-    hud = Label.new()
-    hud.add_theme_color_override("font_outline_color",Color.BLACK)
-    hud.add_theme_constant_override("outline_size",5)
-    panel.add_child(hud)
-    start_button = button(panel,"Start Supply Scramble · 120s",start)
-    action_button = button(panel,"Pick Up",interact)
-    drop_button = button(panel,"Drop",drop)
-    restart_button = button(panel,"Restart preview",restart)
-    restart_button.hide()
-    action_button.hide()
-    drop_button.hide()
-
-func button(parent: Node, text: String, action: Callable) -> Button:
-    var control := Button.new()
-    control.text = text
-    control.pressed.connect(action)
-    parent.add_child(control)
-    return control
+    set_physics_process(false)
 
 func start() -> void:
-    if preview.introducing:
-        return
-    simulation.ready()
-    simulation.start()
-    start_button.hide()
-    preview.subtitle.text = "Gather supplies for your tribe! Carry one item; load at your tribe’s rail station.\nThrow at either bow opening. Floating cargo is unsecured."
+    if preview.introducing: return
+    preview.session.start()
 
 func restart() -> void:
     preview.call_deferred("restart_scramble")
 
 func accessible(actor: int, action: String, id: String) -> bool:
-    if action != "pickup":
+    if action not in ["pickup","steal","load"]:
         return true
     var body: Node3D = preview.cast[actor]
     var from := body.global_position + Vector3.UP * .5
-    var to: Vector3 = simulation.items[id].position + Vector3.UP * .3
+    var to: Vector3 = visuals[id].target_point() if action=="steal" else simulation.items[id].position+Vector3.UP*.3
+    if action == "load":
+        var approaches: Array = simulation.unloading.get(simulation.actors[actor].tribe,[simulation.stations[simulation.actors[actor].tribe]])
+        var closest: Vector3 = approaches[0]
+        for point: Vector3 in approaches:
+            if body.position.distance_to(point) < body.position.distance_to(closest): closest = point
+        to = closest + Vector3.UP*.5
     var query := PhysicsRayQueryParameters3D.create(from,to,1)
     return preview.get_world_3d().direct_space_state.intersect_ray(query).is_empty()
 
-func _physics_process(delta: float) -> void:
-    if simulation.suspended:
-        return
-    for id: int in preview.cast:
-        simulation.actors[id].position = preview.cast[id].position
-    simulation.advance(delta,accessible)
-    if simulation.phase == MarooningScramble.Phase.SCRAMBLE_ACTIVE:
-        brain_elapsed += delta
-        if brain_elapsed >= .05:
-            brain_elapsed = 0
-            var ids := agents.keys()
-            for iteration in 2:
-                decide(ids[brain_index % ids.size()])
-                brain_index += 1
-        for id: int in agents:
-            var actor: CampHumanoidMotor = preview.cast[id]
-            var direction := Vector3.ZERO
-            if targets.has(id) and not simulation.pending.has(id):
-                var agent: NavigationAgent3D = agents[id]
-                if not agent.is_navigation_finished():
-                    direction = actor.position.direction_to(agent.get_next_path_position())
-                    direction.y = 0
-            actor.movement_speed_multiplier = simulation.multiplier(id) * clampf(.8 + simulation.rating(id,"speed") * .04,.84,1.2)
-            actor.walk_direction(direction,true,delta)
-        preview.player.movement_speed_multiplier = simulation.multiplier(int(preview.configuration.selected))
-    elif simulation.phase == MarooningScramble.Phase.SCRAMBLE_COMPLETE and not finished:
-        finished = true
-        action_button.hide()
-        drop_button.hide()
-        restart_button.show()
-        preview.player.locked = true
-        preview.touch.cancel()
-        var result := simulation.result(preview.routes)
-        preview.set_meta("scramble_result",result)
-        var text := "SCRAMBLE COMPLETE · Secured cargo\n"
-        for tribe: Dictionary in preview.configuration.tribes:
-            text += "%s: %d   " % [tribe.name,result.secured[tribe.id].size()]
-        preview.subtitle.text = text + "\nUnsecured: %d · Preview only; ocean recovery comes next." % result.unsecured.size()
-    update_visuals(delta)
-    update_hud()
-
 func decide(id: int) -> void:
-    if simulation.pending.has(id):
+    if simulation.pending.has(id) or not simulation.eligible(id):
         return
     var held := simulation.carried(id)
     var actor: Node3D = preview.cast[id]
     var agent: NavigationAgent3D = agents[id]
     if not held.is_empty():
-        var station: Vector3 = simulation.stations[simulation.actors[id].tribe]
-        agent.target_position = station
+        traffic.target(id,traffic.unloading_goal(id),"carrying")
         targets[id] = held
-        if simulation.valid(id,"load",held):
-            simulation.request(id,"load",held)
+        return
+    if traffic.slots.has(id):
+        traffic.release(id)
+        targets.erase(id)
+        traffic.target(id,actor.position+Vector3(-signf(actor.position.x)*.8,0,1.0),"clearing")
+        return
+    if traffic.intents.get(id,"") == "clearing" and MarooningDeckTraffic.planar(actor.position,traffic.goals[id]) > .3:
         return
     if targets.has(id):
         var target: String = targets[id]
         if simulation.valid(id,"pickup",target):
             simulation.request(id,"pickup",target,accessible(id,"pickup",target))
             return
+        if simulation.items[target].state in [MarooningScramble.State.ABOARD,MarooningScramble.State.DROPPED]:
+            return
+        targets.erase(id)
+    # Theft is rare and personality/value gated; collection remains predominant.
+    if simulation.rating(id,"risk") + simulation.rating(id,"aggression") > 14:
+        for item: Dictionary in simulation.items.values():
+            if item.state == MarooningScramble.State.CARRIED and simulation.valid(id,"steal",item.id) and simulation.definitions[item.type].category in ["tool","food"]:
+                if simulation.request(id,"steal",item.id,accessible(id,"steal",item.id)):
+                    return
     if last_positions.has(id) and actor.position.distance_to(last_positions[id]) < .15 and targets.has(id):
         stalled[id] = int(stalled.get(id,0)) + 1
         if stalled[id] > 12:
@@ -203,82 +150,76 @@ func decide(id: int) -> void:
             best_score = score
     if best.is_empty():
         targets.erase(id)
+        # No reachable supplies: leave the collection lanes open, retain participation.
+        var centre: Vector3 = simulation.stations[simulation.actors[id].tribe]
+        traffic.target(id,traffic.parking_goal(id),"waiting")
     else:
         var destination: Vector3 = simulation.items[best].position
-        var path := NavigationServer3D.map_get_path(agent.get_navigation_map(),actor.position,destination,true)
-        if path.is_empty() or path[path.size()-1].distance_to(destination) > 1.2:
-            rejected[str(id) + ":" + best] = simulation.elapsed + 8
+        var approach := destination
+        var best_distance := INF
+        for offset: Vector3 in [Vector3(-1,0,0),Vector3(1,0,0),Vector3(0,0,-1),Vector3(0,0,1),Vector3.ZERO]:
+            var point := destination+offset
+            var path := NavigationServer3D.map_get_path(agent.get_navigation_map(),actor.position,point,true)
+            if path.is_empty() or MarooningDeckTraffic.planar(path[path.size()-1],point)>.4: continue
+            var query := PhysicsRayQueryParameters3D.create(point+Vector3.UP*.5,destination+Vector3.UP*.3,1)
+            if not preview.get_world_3d().direct_space_state.intersect_ray(query).is_empty(): continue
+            var score := actor.position.distance_to(point)
+            if score<best_distance:
+                best_distance = score
+                approach = point
+        if best_distance == INF:
+            rejected[str(id)+":"+best] = simulation.elapsed+8
             targets.erase(id)
             return
         targets[id] = best
-        agent.target_position = destination
+        traffic.target(id,approach,"approaching")
 
 func update_visuals(delta: float) -> void:
     var counts := {}
     for id: String in simulation.items:
         var item: Dictionary = simulation.items[id]
         var visual: Node3D = visuals[id]
-        if item.state == MarooningScramble.State.FLOATING and previous_states.get(id,-1) != item.state:
-            flights[id] = {"from":visual.position,"time":0.0}
-        previous_states[id] = item.state
-        if flights.has(id):
-            flights[id].time += delta
-            var progress := minf(float(flights[id].time)/.65,1)
-            visual.position = (flights[id].from as Vector3).lerp(item.position,progress) + Vector3.UP * sin(progress*PI)*1.5
-            if progress >= 1:
-                flights.erase(id)
-            continue
+        if item.state==MarooningScramble.State.SECURED: continue
+        if item.state!=MarooningScramble.State.CARRIED and visual.get_parent()!=preview:
+            visual.reparent(preview,true)
+            visual.rotation=Vector3(0,visual.global_rotation.y,0)
+            visual.scale=Vector3.ONE
         if item.state == MarooningScramble.State.CARRIED:
-            var actor: CampHumanoidMotor = preview.cast[item.actor]
-            visual.position = actor.position + Vector3(0,.95,.48).rotated(Vector3.UP,actor.travel_heading)
+            attach_carried(visual,item)
         elif item.state == MarooningScramble.State.SECURED:
-            var tribe: String = item.tribe
-            var index := int(counts.get(tribe,0))
-            counts[tribe] = index + 1
-            var raft_index := 0
-            for i in preview.configuration.tribes.size():
-                if preview.configuration.tribes[i].id == tribe:
-                    raft_index = i
-            visual.position = preview.layout.raft_mounts[raft_index] + Vector3((index%4 - 1.5)*.65,.4 + (index/20)*.5,(index/4%5 - 2)*.7)
+            continue
         else:
             visual.position = item.position
 
-func update_hud() -> void:
-    var id := int(preview.configuration.selected)
-    var held := simulation.carried(id)
-    var tribe: String = simulation.actors[id].tribe
-    var secured := 0
-    for item: Dictionary in simulation.items.values():
-        if item.state == MarooningScramble.State.SECURED and item.tribe == tribe:
-            secured += 1
-    hud.text = "%03d s · %s · Secured %d\n%s" % [ceili(simulation.duration-simulation.elapsed),tribe,secured,"Hands free" if held.is_empty() else simulation.definitions[simulation.items[held].type].name]
-    if simulation.phase != MarooningScramble.Phase.SCRAMBLE_ACTIVE:
-        return
-    nearest = ""
-    contextual = ""
-    if held.is_empty():
-        var distance := 1.35
-        for item: Dictionary in simulation.items.values():
-            var current: float = preview.player.position.distance_to(item.position)
-            if item.state in [MarooningScramble.State.ABOARD,MarooningScramble.State.DROPPED] and current < distance and accessible(id,"pickup",item.id):
-                nearest = item.id
-                distance = current
-        if not nearest.is_empty():
-            contextual = "pickup"
-    else:
-        nearest = held
-        if simulation.valid(id,"load",held):
-            contextual = "load"
-        elif simulation.valid(id,"throw",held):
-            contextual = "throw"
-    action_button.visible = not contextual.is_empty()
-    action_button.text = {"pickup":"Pick Up", "load":"Load Raft", "throw":"Throw Overboard"}.get(contextual,"")
-    action_button.disabled = simulation.pending.has(id)
-    drop_button.visible = not held.is_empty()
-
-func interact() -> void:
-    if not nearest.is_empty() and not contextual.is_empty():
-        simulation.request(int(preview.configuration.selected),contextual,nearest,accessible(int(preview.configuration.selected),contextual,nearest))
 func drop() -> void:
     var id := int(preview.configuration.selected)
     simulation.request(id,"drop",simulation.carried(id))
+
+func review_state() -> Dictionary:
+    var rows: Array = []
+    for item: Dictionary in simulation.items.values():
+        var point: Vector3 = simulation.actors[item.actor].position if item.state == MarooningScramble.State.CARRIED else item.position
+        rows.append({"id":item.id,"type":item.type,"state":item.state,"actor":item.actor,"position":[point.x,point.y,point.z]})
+    var id := int(preview.configuration.selected)
+    var station: Vector3 = simulation.stations[simulation.actors[id].tribe]
+    return {"items":rows,"carried":simulation.carried(id),"target":preview.hud.nearest if is_instance_valid(preview.hud) else "","action":preview.hud.command if is_instance_valid(preview.hud) else "","basket":[station.x,station.y,station.z],"pending":simulation.pending.get(id,{}),"contributions":simulation.contributions[id]}
+
+func attach_carried(visual: MarooningSupplyVisual,item: Dictionary) -> void:
+    var actor: CampHumanoidMotor=preview.cast[item.actor]
+    var skeleton: Skeleton3D=actor.presentation.skeleton
+    var bone := skeleton.find_bone("hand_r")
+    if bone<0:
+        visual.global_position=actor.position+Vector3(-.4,.95,.1).rotated(Vector3.UP,actor.travel_heading)
+        return
+    if not carry_attachments.has(item.actor):
+        var attachment := BoneAttachment3D.new()
+        attachment.bone_name=skeleton.get_bone_name(bone)
+        skeleton.add_child(attachment)
+        carry_attachments[item.actor]=attachment
+    var parent: BoneAttachment3D=carry_attachments[item.actor]
+    if visual.get_parent()==parent: return
+    var hand := skeleton.global_transform*skeleton.get_bone_global_pose(bone)
+    var grip := MarooningSupplyVisual.carry_grip(item.type)
+    var basis := hand.basis.inverse()*Basis(Vector3.UP,actor.travel_heading)*Basis.from_euler(grip.rotation)
+    visual.reparent(parent,false)
+    visual.transform=Transform3D(basis,-(basis*(grip.point as Vector3)))

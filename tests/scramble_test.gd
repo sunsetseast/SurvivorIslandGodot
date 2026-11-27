@@ -36,9 +36,10 @@ func _initialize() -> void:
     check(not sim.request(1,"pickup",id,false),"Blocked access rejected")
     sim.request(1,"pickup",id)
     sim.advance(2)
-    sim.request(1,"throw",id)
+    check(not sim.request(1,"throw",id),"Throw unavailable")
+    check(sim.items[id].state == MarooningScramble.State.CARRIED and sim.result({}).secured.a.is_empty(),"Carried cargo never secured")
+    sim.request(1,"drop",id)
     sim.advance(2)
-    check(sim.items[id].state == MarooningScramble.State.FLOATING and sim.result({}).secured.a.is_empty(),"Floating cargo never secured")
     var next: String = sim.items.keys()[1]
     sim.items[next].position = Vector3(0,2,0)
     sim.request(1,"pickup",next)
@@ -65,5 +66,67 @@ func _initialize() -> void:
         fixture_sim.request(1,"load",item_id)
         fixture_sim.advance(2)
     check(repeat_a.items == repeat_b.items and repeat_a.events == repeat_b.events,"Seeded command fixtures repeat exactly")
+    # Search bounded seed cases to prove both outcomes without changing ratings.
+    var success_seed := -1
+    var failure_seed := -1
+    for seed_value in range(1,30):
+        var theft := fixture()
+        theft.rng.seed = seed_value
+        var stolen: String = theft.items.keys()[0]
+        theft.items[stolen].position = Vector3(0,2,0)
+        theft.request(1,"pickup",stolen)
+        theft.advance(2)
+        theft.actors[2].position = Vector3(8,2,0)
+        check(not theft.request(2,"steal",stolen),"Remote theft rejected")
+        theft.actors[2].position = Vector3(0,2,0)
+        check(not theft.request(2,"steal",stolen,false),"Occluded theft rejected")
+        check(theft.request(2,"steal",stolen),"Theft takes a pending interaction")
+        check(not theft.request(2,"steal",stolen),"Duplicate theft rejected")
+        theft.advance(2)
+        if theft.carried(2) == stolen:
+            success_seed = seed_value
+            check(theft.carried(1).is_empty(),"Success transfers exact instance")
+            check(not theft.request(1,"steal",stolen),"Immediate revenge rejected")
+        else:
+            failure_seed = seed_value
+            check(theft.carried(1)==stolen,"Failure preserves exact owner")
+        check(not theft.request(2,"steal",stolen),"Theft cooldown bounded spam")
+        check(theft.items.size()==50,"Theft conserves all instances")
+        var terminal: Dictionary = theft.events.back()
+        check(terminal.victim==1 and terminal.actor==2 and terminal.instance==stolen,"Semantic identities retained")
+        theft.advance(120)
+        check(not theft.request(2,"steal",stolen),"Expired theft rejected")
+    check(success_seed>0 and failure_seed>0,"Seeded theft produces success and failure")
+    var moving := fixture()
+    var moving_id: String = moving.items.keys()[0]
+    moving.items[moving_id].position = Vector3(0,2,0)
+    moving.request(1,"pickup",moving_id)
+    moving.advance(2)
+    moving.request(2,"steal",moving_id)
+    moving.actors[1].position = Vector3(10,2,0)
+    moving.advance(2)
+    check(moving.carried(1)==moving_id,"Theft completion revalidates range")
+    moving.actors[1].position = Vector3(0,2,0)
+    moving.request(1,"load",moving_id)
+    moving.advance(2)
+    check(not moving.request(2,"steal",moving_id),"Secured cargo cannot be stolen")
+    var contests: Array[MarooningScramble] = []
+    for reversed_order in [false,true]:
+        var contest := fixture()
+        contest.actors[3] = {"position":Vector3(0,2,0),"tribe":"b","attributes":{}}
+        contest.contributions[3] = {}
+        var cargo_id: String = contest.items.keys()[0]
+        contest.items[cargo_id].position = Vector3(0,2,0)
+        contest.request(1,"pickup",cargo_id)
+        contest.advance(2)
+        for thief: int in ([3,2] if reversed_order else [2,3]):
+            contest.request(thief,"steal",cargo_id)
+        contest.advance(2)
+        var owners := 0
+        for actor_id: int in contest.actors:
+            owners += int(contest.carried(actor_id)==cargo_id)
+        check(owners==1 and contest.items.size()==50,"Contested theft has one owner and conserves instances")
+        contests.append(contest)
+    check(contests[0].items==contests[1].items,"Contested theft completion is deterministic by actor ID")
     print("Scramble authority: ",failures," failures")
     quit(1 if failures else 0)
