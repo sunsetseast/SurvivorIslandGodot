@@ -18,7 +18,7 @@ func scenario(count_value: int, cargo_kg: float, human: String, strength: float,
             var actor: Dictionary = sim.actors[id]
             if not actor.raft.is_empty() and sim.rafts[actor.tribe].arrived:
                 sim.leave(id)
-            if actor.raft.is_empty() and actor.mode != "arrived":
+            if actor.raft.is_empty() and not sim.pending.has(id) and not actor.arrived:
                 var prior: Vector3 = actor.position
                 actor.position = prior.move_toward(sim.actor_objective(id),sim.swim_speed(id)/60)
                 actor.swim_distance += prior.distance_to(actor.position)

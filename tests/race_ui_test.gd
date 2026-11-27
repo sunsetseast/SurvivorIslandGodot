@@ -1,58 +1,71 @@
 extends SceneTree
 var failures := 0
-func _initialize() -> void:
-    call_deferred("run")
+func check(value: bool,message: String) -> void:
+    if not value:
+        failures+=1
+        printerr("FAIL: ",message)
+func _initialize() -> void: call_deferred("run")
 func run() -> void:
-    var catalog: SurvivorContestantCatalog = load("res://tests/marooning_test.gd").fixture()
+    var catalog: SurvivorContestantCatalog=load("res://tests/marooning_test.gd").fixture()
     var setup := SurvivorNewSeasonSetup.new()
-    setup.selected_id = 18
+    setup.selected_id=18
     var division := SurvivorSeasonConfiguration.new()
     division.assign(catalog)
     var preview := MarooningPreview.new()
-    preview.catalog = catalog
-    preview.configuration = division.configuration(catalog,setup)
+    preview.catalog=catalog
+    preview.configuration=division.configuration(catalog,setup)
     root.add_child(preview)
     await process_frame
     preview.finish_intro()
-    preview.race.begin()
-    var actor: Dictionary = preview.race.simulation.actors[18]
-    actor.raft = actor.tribe
-    preview.race.simulation.phase = MarooningRace.Phase.RAFT_RACE
-    preview.race.update_hud()
-    preview.scramble.set_physics_process(false)
-    for button: Button in [preview.scramble.action_button,preview.scramble.drop_button,preview.scramble.steal_button]:
-        button.show()
-    for viewport_size: Vector2i in [Vector2i(956,440),Vector2i(812,375)]:
-        root.size = viewport_size
-        for frame in 5:
-            await process_frame
+    preview.session.start(false)
+    preview.set_physics_process(false)
+    var actor: Dictionary=preview.session.race.actors[18]
+    var raft: Dictionary=preview.session.race.rafts[actor.tribe]
+    for viewport_size: Vector2i in [Vector2i(956,440),Vector2i(812,375),Vector2i(844,390),Vector2i(390,844)]:
+        root.size=viewport_size
+        root.content_scale_size=Vector2i(1280,720)
+        for frame in 5: await process_frame
         var bounds := preview.get_viewport().get_visible_rect()
-        for button: Button in [preview.race.paddle,preview.race.rest,preview.race.jump,preview.scramble.action_button,preview.scramble.drop_button,preview.scramble.steal_button]:
-            var css_size := button.get_global_rect().size * Vector2(viewport_size) / bounds.size
-            if css_size.y < 44:
-                failures += 1
-                printerr("FAIL: touch height below 44 CSS pixels: ",button.text," ",css_size)
-            if not bounds.encloses(button.get_global_rect()):
-                failures += 1
-                printerr("FAIL: ",viewport_size," clipped ",button.text," ",button.get_global_rect()," bounds ",bounds)
-        print("Race UI bounds checked ",viewport_size)
-    var safe := Rect2(Vector2(100,0),preview.get_viewport().get_visible_rect().size-Vector2(200,35))
-    preview.touch.safe=safe
-    preview._layout_hud_safe()
+        for state_name: String in ["deck","moored","underway","swimming","shore","summary"]:
+            actor.raft=actor.tribe if state_name in ["moored","underway"] else ""
+            actor.place="aboard" if not actor.raft.is_empty() else state_name
+            actor.arrived=state_name=="shore"
+            raft.state=state_name
+            preview.session.state=MarooningSession.State.COMPLETE if state_name=="summary" else MarooningSession.State.ACTIVE
+            preview.hud.update_state()
+            for button: Button in preview.hud.actions.values():
+                if not button.visible: continue
+                var css := button.get_global_rect().size*Vector2(viewport_size)/bounds.size
+                check(css.y>=44,"44CSS height "+state_name+" "+str(viewport_size)+" "+str(css))
+                check(bounds.encloses(button.get_global_rect()),"Visible action fits "+state_name+" "+button.text+" rect="+str(button.get_global_rect())+" area="+str(preview.hud.area))
+            check(preview.hud.meter.visible==(state_name=="underway"),"Only underway owns paddle meter")
+            if state_name=="moored": check(preview.hud.primary.text=="Let's Go","Moored encouragement replaces paddle/rest")
+            if state_name=="shore": check(not preview.hud.primary.visible,"No obsolete shore action")
+        var safe := Rect2(bounds.position+Vector2(100,30),bounds.size-Vector2(200,75))
+        preview.touch.safe=safe
+        preview._layout_hud_safe()
+        preview.session.state=MarooningSession.State.ACTIVE
+        actor.raft=actor.tribe
+        raft.state="underway"
+        preview.hud.update_state()
+        for button: Button in preview.hud.actions.values():
+            if button.visible: check(safe.encloses(button.get_global_rect()),"Safe bounds "+button.text)
+        print("STATE_HUD ",viewport_size," bounds=",bounds)
+    # A held native touch must survive HUD refreshes until release.
+    actor.paddling=true
+    preview.hud.update_state()
+    var point := preview.hud.secondary.get_global_rect().get_center()
+    var event := InputEventScreenTouch.new()
+    event.index=772
+    event.position=point
+    event.pressed=true
+    root.push_input(event,true)
     for frame in 5: await process_frame
-    for control: Button in [preview.race.paddle,preview.race.rest,preview.race.jump,preview.scramble.action_button,preview.scramble.drop_button]:
-        if not safe.encloses(control.get_global_rect()):
-            failures += 1
-            printerr("FAIL: safe-area overlap ",control.text," ",control.get_global_rect()," ",safe)
-    var actor_tribe: String = actor.tribe
-    for type: String in preview.scramble.simulation.definitions:
-        preview.race.simulation.scramble_result.secured[actor_tribe].append({"type":type})
-    preview.race.finish()
-    for frame in 5:
-        await process_frame
-    if not preview.get_viewport().get_visible_rect().encloses(preview.subtitle.get_global_rect()):
-        failures += 1
-        printerr("FAIL: Full equipment and personal contribution summary clipped")
+    event=event.duplicate()
+    event.pressed=false
+    root.push_input(event,true)
+    for frame in 3: await process_frame
+    check(not actor.paddling,"Held secondary touch fires after multiple HUD refreshes")
     preview.queue_free()
     await process_frame
     print("Race UI: ",failures," failures")

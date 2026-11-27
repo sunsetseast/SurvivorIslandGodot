@@ -42,7 +42,7 @@ func _initialize() -> void:
     sim.advance(2)
     check(sim.carried(1)==id,"Moving away cancels deposit")
     sim = fixture(); id = sim.carried(1)
-    sim.elapsed = 119.9
+    sim.elapsed = 59.9
     sim.advance(.1)
     sim.advance(2)
     check(sim.carried(1)==id and sim.pending.is_empty(),"Expiry never awards unfinished cargo")

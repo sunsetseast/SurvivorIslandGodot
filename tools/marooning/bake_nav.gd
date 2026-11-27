@@ -5,6 +5,12 @@ func bake() -> void:
     var bay := MarooningBay.new()
     root.add_child(bay)
     bay.build(load("res://marooning/layout.tres"), 3)
+    var layout: MarooningLayout=load("res://marooning/layout.tres")
+    for i in 3:
+        var station := MarooningCollectionStation.new()
+        station.build({"name":"Station","color":"purple"})
+        station.position=layout.collection_centres[i]
+        bay.add_child(station)
     var mesh := NavigationMesh.new()
     mesh.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
     mesh.agent_radius = .4

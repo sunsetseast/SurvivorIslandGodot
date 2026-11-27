@@ -10,3 +10,10 @@ func _try_step(travel: Vector3) -> void:
     collision_mask = 1
     super(travel)
     collision_mask = mask
+
+func walk_direction(desired: Vector3, running: bool, delta: float, animate := true, dive_steer := 0.0) -> void:
+    if raft_attached or locomotion_suspended:
+        velocity=Vector3.ZERO
+        planar=Vector3.ZERO
+        return
+    super(desired,running,delta,animate,dive_steer)

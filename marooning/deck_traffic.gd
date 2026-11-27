@@ -11,6 +11,7 @@ var blocked: Dictionary = {}
 var safe: Dictionary = {}
 var resets: Dictionary = {}
 var stalled_seconds: Dictionary = {}
+var immobile_seconds: Dictionary = {}
 var slot_rotation: Dictionary = {}
 var parking: Dictionary = {}
 var yields: Dictionary = {}
@@ -28,7 +29,9 @@ func bind(owner_node: MarooningScrambleAdapter) -> void:
     adapter.preview.player.add_child(obstacle)
 
 func update_player() -> void:
-    if is_instance_valid(human_obstacle): human_obstacle.velocity = adapter.preview.player.get_real_velocity()
+    if is_instance_valid(human_obstacle):
+        human_obstacle.velocity = adapter.preview.player.get_real_velocity()
+        human_obstacle.avoidance_enabled = adapter.simulation.actors[int(adapter.preview.configuration.selected)].place=="deck" and not adapter.agents.has(int(adapter.preview.configuration.selected))
 
 func configure_agent(id: int) -> void:
     var agent: NavigationAgent3D = adapter.agents[id]
@@ -81,7 +84,7 @@ func unloading_goal(id: int) -> Vector3:
             distance = score
     if best < 0:
         intents[id] = "queue"
-        return sim.stations[tribe] + Vector3(-signf(sim.stations[tribe].x)*(2.0+(id%2)*.85),0,2.2+(id%3)*.95)
+        return parking_goal(id)
     slots[id] = best
     return available[best]
 
@@ -127,7 +130,7 @@ func replan(id: int) -> void:
 func step(id: int, delta: float) -> void:
     var actor: CampHumanoidMotor = adapter.preview.cast[id]
     var sim := adapter.simulation
-    var clock := sim.elapsed + (adapter.preview.race.simulation.elapsed if adapter.preview.race.started else 0.0)
+    var clock := sim.elapsed
     var desired := Vector3.ZERO
     var waiting := sim.pending.has(id) or not goals.has(id)
     if not waiting:
@@ -145,7 +148,7 @@ func step(id: int, delta: float) -> void:
             # wrong elevation or behind collision. Keep sampling that carrier's
             # progress until the ordinary validated deposit actually starts.
             waiting = sim.carried(id).is_empty()
-    actor.movement_speed_multiplier = (sim.multiplier(id) if not adapter.preview.race.started else 1.0) * (.88+sim.rating(id,"speed")*.018)
+    actor.movement_speed_multiplier = sim.multiplier(id) * (.88+sim.rating(id,"speed")*.018)
     if yields.has(id):
         var retreat: Dictionary = yields[id]
         if clock<float(retreat.until) and planar(actor.position,retreat.point)>.2:
@@ -161,7 +164,8 @@ func step(id: int, delta: float) -> void:
     if waiting:
         # RVO assumes idle neighbors also yield; discarding their safe velocity deadlocks carriers.
         velocity = Vector3.ZERO if sim.pending.has(id) else velocity.limit_length(.35)
-    adapter.agents[id].avoidance_priority = (.70+(id%17)*.009) if slots.has(id) else (.4 if not sim.carried(id).is_empty() else .3)
+    adapter.agents[id].avoidance_priority = 1.0 if sim.pending.has(id) else ((.70+(id%17)*.009) if slots.has(id) else (.4 if not sim.carried(id).is_empty() else .3))
+    adapter.agents[id].max_speed = 0.0 if sim.pending.has(id) else speed
     # Ignore numerical RVO noise; stationary actors retain their heading.
     if velocity.length() < .12: velocity = Vector3.ZERO
     actor.walk_direction(velocity/maxf(.1,speed),false,delta)
@@ -174,17 +178,19 @@ func step(id: int, delta: float) -> void:
         cursor = waypoint
     if goals.has(id): remaining += planar(cursor,goals[id])
     var goal: Vector3 = goals.get(id,actor.position)
-    if not samples.has(id): samples[id] = {"at":clock,"remaining":remaining,"goal":goal}
+    if not samples.has(id): samples[id] = {"at":clock,"remaining":remaining,"goal":goal,"position":actor.position}
     var sample: Dictionary = samples[id]
     if clock-float(sample.at) >= 1.0:
         var same_goal := planar(goal,sample.goal)<.15
+        var carrying_still := not sim.carried(id).is_empty() and not sim.pending.has(id) and planar(actor.position,sample.position)<.10
+        immobile_seconds[id]=float(immobile_seconds.get(id,0))+clock-float(sample.at) if carrying_still else 0.0
         var progressed := float(sample.remaining)-remaining >= .12
         if not waiting and same_goal and not progressed:
             blocked[id] = float(blocked.get(id,0)) + clock-float(sample.at)
             stalled_seconds[id] = float(stalled_seconds.get(id,0))+clock-float(sample.at)
         else: blocked[id] = 0.0
-        samples[id] = {"at":clock,"remaining":remaining,"goal":goal}
-        if float(blocked.get(id,0)) > 2.5:
+        samples[id] = {"at":clock,"remaining":remaining,"goal":goal,"position":actor.position}
+        if float(blocked.get(id,0)) > 2.5 or float(immobile_seconds.get(id,0))>2.5:
             # Repath first, then release the approach for an alternate/yield. Never teleport.
             replan(id)
             # A real short retreat breaks a head-on/local avoidance equilibrium.
@@ -200,6 +206,7 @@ func step(id: int, delta: float) -> void:
                     if other_id!=id and planar(candidate,adapter.preview.cast[other_id].position)<.85: clear=false
                 var ray := PhysicsRayQueryParameters3D.create(actor.position+Vector3.UP*.8,candidate+Vector3.UP*.8,1)
                 if not adapter.preview.get_world_3d().direct_space_state.intersect_ray(ray).is_empty(): clear=false
+                if actor.test_move(actor.global_transform,candidate-actor.position): clear=false
                 if clear:
                     yields[id] = {"point":candidate,"until":clock+2.5}
                     break
@@ -211,4 +218,6 @@ func step(id: int, delta: float) -> void:
             adapter.targets.erase(id)
             goals.erase(id)
             blocked[id] = 0.0
+            immobile_seconds[id]=0.0
             intents[id] = "yielding"
+            adapter.preview.session.events.append({"source":"navigation","action":"deck_repath","actor":id,"elapsed":clock,"position":actor.position,"held":sim.carried(id),"reason":"no_route_progress","physical_retreat":yields.has(id)})

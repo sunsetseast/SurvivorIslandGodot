@@ -9,6 +9,8 @@ func run() -> void:
     var catalog := SurvivorContestantCatalog.new()
     if not catalog.available: catalog = load("res://tests/marooning_test.gd").fixture()
     for scenario: Array in [[2,"Balanced",1,18],[3,"Balanced",42,1],[3,"Brains / Brawn / Beauty",99,7],[2,"Battle of the Sexes",7,3],[2,"Random",99,10],[3,"Random",1,14],[2,"Manual",42,4],[3,"Manual",7,16]]:
+        var filter := OS.get_environment("MAROONING_TRAFFIC_SCENARIO")
+        if not filter.is_empty() and filter!="%s:%s:%s:%s"%scenario: continue
         var setup := SurvivorNewSeasonSetup.new()
         setup.selected_id = int(scenario[3])
         var division := SurvivorSeasonConfiguration.new()
@@ -38,7 +40,10 @@ func run() -> void:
             sim.items[item_id].state = MarooningScramble.State.CARRIED
             sim.items[item_id].actor = id
             cargo.append(item_id)
-        preview.scramble.start()
+        for actor: Dictionary in preview.session.race.actors.values():
+            actor.collect_until=INF
+            actor.objective="collect"
+        preview.session.start(false)
         var previous := {}
         var jam := {}
         var longest := 0.0

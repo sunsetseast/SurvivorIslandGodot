@@ -6,8 +6,9 @@ extends Resource
 @export var reward := Vector3(0, .5, 115)
 @export var landing := Vector3(0, .5, 178)
 @export var reward_id := "fishing-equipment-preview"
-@export var raft_mounts: Array[Vector3] = [Vector3(-10, .55, 30), Vector3(10, .55, 30), Vector3(20, .55, 31.7834151)]
-@export var rival_exits: Array[Vector3] = [Vector3(-180, 0, 100), Vector3(180, 0, 100)]
+@export var raft_mounts: Array[Vector3] = [Vector3(-11,.55,3.2),Vector3(11,.55,3.2),Vector3(-11,.55,8.0)]
+@export var deck_accesses: Array[Vector3] = [Vector3(-3.35,1.9,3.2),Vector3(3.35,1.9,3.2),Vector3(-3.35,1.9,8.0)]
+@export var rival_exits: Array[Vector3] = [Vector3(-60,.5,178),Vector3(60,.5,178)]
 
 # Editable deck anchors in metres, kept off the centre mast and bow corridor.
 @export var collection_centres: Array[Vector3] = [Vector3(-2.95,1.9,1.0),Vector3(2.95,1.9,1.0),Vector3(-2.95,1.9,5.8)]
@@ -59,6 +60,16 @@ func routes(config: Dictionary) -> Dictionary:
         result[tribe.id] = {"route_id": "player-landing" if own else "rival-exit-%d" % rival,
             "destination": landing if own else rival_exits[rival], "camp": tribe.location,
             "raft_id":"raft-%d" % result.size(), "raft_mount":raft_mounts[result.size()]}
+        var index := result.size()-1
+        var destination: Vector3=result[tribe.id].destination
+        var side := -1.0 if raft_mounts[index].x<0 else 1.0
+        var clearance_x := side*(30.0 if index==2 else 19.0)
+        result[tribe.id]["heading"]=side*PI/2
+        result[tribe.id]["deck_access"]=deck_accesses[index]
+        result[tribe.id]["clearance"]=[Vector3(clearance_x,.55,raft_mounts[index].z),Vector3(clearance_x,.55,25)]
+        result[tribe.id]["stop_position"]=Vector3(destination.x,.55,156)
+        result[tribe.id]["shore_center"]=Vector3(destination.x,bed(destination.x,168),168)
+        result[tribe.id]["shore_min_y"]=.25
         if not own:
             rival += 1
     return result

@@ -27,7 +27,8 @@ func build(tribe: Dictionary) -> void:
     flag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
     flag.font_size = 38
     flag.pixel_size = .0013
-    flag.fixed_size = true
+    flag.fixed_size = false
+    flag.visibility_range_end = 26
     flag.modulate = Color(tribe.color).lightened(.4)
     flag.outline_size = 10
     add_child(flag)
@@ -45,6 +46,7 @@ func build(tribe: Dictionary) -> void:
     cargo_label.text = "SECURED CARGO"
     cargo_label.position = Vector3(0,.3,2.1)
     cargo_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+    cargo_label.visibility_range_end = 18
     cargo_label.font_size = 32
     cargo_label.pixel_size = .0013
     cargo_label.fixed_size = true

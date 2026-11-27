@@ -1,0 +1,13 @@
+# Scoped presentation
+
+All 18 approved identities and 486 ratings remain unchanged. Their approved catalog model paths are empty, so the existing temporary Maeve rig remains the fallback for every contestant. This phase does not claim a production cast model pipeline.
+
+The marooning-only SkeletonModifier3D runs after the AnimationMixer, on verified upper arm/lower arm/hand bones. Two-bone corrections follow actual paddle grip points without editing rest poses. The existing Seated clip supplies hips and legs; measured pelvis/foot positions set the real bench top and bamboo deck contact. Resting oars are racked, working blades sweep at the accepted stroke envelope, and ordinary movement uses the existing carry/walk/wade/swim clips. Thin matte tribe cloth follows the actual neck bone.
+
+The existing Tonsai sky, water, sand/leaf-litter textures, near/far palm variants, forest, understory, ferns and limestone are reused locally. Limestone uses one LOD at a time with its actual mesh bottom seated into terrain. Foliage is batched and graded locally; ordinary Tonsai assets/materials are not modified. The original shoreline triangle winding is retained for rendering, with two-sided physical seabed collision. Modular raft bamboo nodes, lashings and weathered benches are batched by material. No new external assets, camp map or paid service are introduced.
+
+One HUD owner selects actions from actual state. Deck, moored, underway, swimming, shore and summary states do not stack competing control panels. The approved private carved wood and Survivant font are reused only in owner-private builds, with the existing public fallbacks. Controls account for safe areas and at least 44 CSS pixel targets at 956×440, 812×375, 844×390 and portrait; long item names cannot expand a button outside the viewport. Hiding and re-showing held buttons each frame is prohibited because that cancels real touch activation. The movement stick disappears while attached; orbit remains available. The scoped vessel camera frames the raft while preserving user orbit.
+
+The introduction is five short views over 20 seconds, with essential collection/departure/reward/shore instructions, Skip and a three-second countdown. Neither advances gameplay time. No recorded or licensed audio acceptance is claimed; sound remains a presentation limitation unless verified separately.
+
+Asset rights and provenance remain the existing project records in `docs/phase2/ASSETS.md`, `marooning/assets/PROVENANCE.txt`, the Tonsai asset manifests and private owner approvals. Restricted art, catalogs, screenshots, recordings and game packs must never enter GitHub or public Actions artifacts.

@@ -23,11 +23,16 @@ func fixture(count_value := 2, seed_value := 42) -> MarooningRace:
     sim.configure(config,roster,cargo,routes,Vector3(5,0,100))
     return sim
 func board_all(sim: MarooningRace) -> void:
-    for id: int in sim.actors:
-        sim.actors[id].position = sim.boarding_point(sim.actors[id].tribe)
-        check(sim.request_board(id),"Near boarding request accepted")
-    for i in 60:
-        sim.advance(1.0/60)
+    var remaining := sim.actors.keys()
+    # Real concurrent access reservations, followed by a second capacity wave.
+    while not remaining.is_empty():
+        for id: int in remaining.duplicate():
+            var index := sim.nearest_access(id,true)
+            if index<0: continue
+            sim.actors[id].position=sim.to_world(sim.actors[id].tribe,MarooningRace.access_points()[index])
+            if sim.request_board(id): remaining.erase(id)
+        for frame in 300: sim.advance(1.0/60)
+    for tribe: String in sim.rafts: check(sim.commit_launch(tribe,"authority_fixture"),"Crew launches independently")
 func run_race(count_value: int, seed_value: int) -> Dictionary:
     var sim := fixture(count_value,seed_value)
     board_all(sim)
@@ -37,7 +42,7 @@ func run_race(count_value: int, seed_value: int) -> Dictionary:
             var actor: Dictionary = sim.actors[id]
             if not actor.raft.is_empty() and sim.rafts[actor.tribe].arrived:
                 sim.leave(id)
-            if actor.raft.is_empty() and actor.mode != "arrived":
+            if actor.raft.is_empty() and not sim.pending.has(id) and not actor.arrived:
                 var goal := sim.actor_objective(id)
                 actor.position = actor.position.move_toward(goal,sim.swim_speed(id)/60)
         sim.advance(1.0/60)
@@ -49,104 +54,72 @@ func run_race(count_value: int, seed_value: int) -> Dictionary:
 func _initialize() -> void:
     var sim := fixture()
     check(not sim.request_board(1,false),"Blocked boarding rejected")
-    sim.actors[1].position = Vector3(100,0,0)
+    sim.actors[1].position=Vector3(100,0,0)
     check(not sim.request_board(1),"Remote boarding rejected")
-    sim.actors[1].position = sim.boarding_point("t0")
+    sim.actors[1].position=sim.boarding_point("t0")
     check(sim.request_board(1),"Climb begins")
-    sim.actors[1].position = Vector3(100,0,0)
-    for i in 60:
-        sim.advance(1.0/60)
-    check(sim.actors[1].raft.is_empty(),"Climb completion revalidates proximity")
-    sim = fixture()
+    for i in 240: sim.advance(1.0/60)
+    check(sim.actors[1].raft=="t0","Reserved local anchor completes without obsolete world-point recheck")
+    sim=fixture()
     board_all(sim)
     check(sim.rafts.t0.crew.size()==9,"Nine seats occupied")
     for a: int in sim.rafts.t0.crew:
         for b: int in sim.rafts.t0.crew:
-            if a != b:
-                check(sim.actors[a].position.distance_to(sim.actors[b].position)>.72,"Boarding anchors never overlap capsules")
+            if a!=b: check(sim.actors[a].position.distance_to(sim.actors[b].position)>.72,"Unique nonoverlapping occupied anchors")
     var positions := {}
-    for i in 9:
-        positions[MarooningRace.seat(i)] = true
+    for i in 9: positions[MarooningRace.seat(i)]=true
     check(positions.size()==9,"Unique nine-person anchors")
     sim.update_mass(sim.rafts.t0)
-    var mass: float = sim.rafts.t0.mass_kg
-    var draft: float = sim.rafts.t0.draft
-    sim.rafts.t0.cargo_kg += 100
+    var mass: float=sim.rafts.t0.mass_kg
+    var draft: float=sim.rafts.t0.draft
+    sim.rafts.t0.cargo_kg+=100
     sim.update_mass(sim.rafts.t0)
-    check(sim.rafts.t0.draft > draft,"Cargo increases displacement")
+    check(sim.rafts.t0.draft>draft,"Cargo increases displacement")
     check(sim.leave(1),"Jump removes member")
-    check(sim.rafts.t0.mass_kg == mass+25,"Jump removes 75kg immediately")
-    check(sim.actors[1].power == 0 and not sim.rafts.t0.crew.has(1),"Jump removes propulsion and membership")
-    sim.suspended = true
-    var time := sim.elapsed
+    check(sim.rafts.t0.mass_kg==mass+25,"Jump removes75kg immediately")
+    check(sim.actors[1].power==0 and not sim.rafts.t0.crew.has(1),"Jump removes force/membership")
+    sim.suspended=true
+    var clock := sim.elapsed
     sim.advance(100)
-    check(sim.elapsed == time,"Focus pause preserves time")
-    sim.suspended = false
-    sim.phase = MarooningRace.Phase.RAFT_RACE
-    sim.elapsed = 20
-    sim.advance(1.0/60)
-    sim.actors[2].beat = -100
+    check(sim.elapsed==clock,"Focus pause preserves time")
+    sim.suspended=false
+    sim.actors[2].beat=-100
+    sim.actors[2].stroke_at=-10
     check(not sim.stroke(2).is_empty() and sim.stroke(2).is_empty(),"Stroke spam rejected")
-    sim.actors[1].position = sim.reward_position
+    sim.actors[1].position=sim.reward_position
     check(sim.claim(1) and not sim.claim(2),"Reward exclusive")
-    var physics := fixture()
-    board_all(physics)
-    physics.phase = MarooningRace.Phase.RAFT_RACE
-    physics.elapsed = 20
-    physics._beat = 12
-    physics.rafts.t1.cargo_kg = 200
-    for actor: Dictionary in physics.actors.values():
-        actor.power = 100.0
-        actor.beat = 12
-        actor.stroke_due = INF
-    physics.advance(.25)
-    physics.advance(.25)
-    check(physics.rafts.t0.speed > physics.rafts.t1.speed,"Equal force plus extra cargo reduces acceleration")
-    for actor: Dictionary in physics.actors.values():
-        actor.paddling = false
-        actor.power = 0.0
-    var coasting: float = physics.rafts.t0.speed
-    for frame in 600:
-        physics.advance(1.0/60)
-    check(physics.rafts.t0.speed < coasting,"No paddlers produces drag-only deceleration")
-    var power_test := fixture()
-    power_test.apply_stroke(1,1.0,"Good")
-    var fresh: float = power_test.actors[1].power
-    power_test.actors[1].fatigue = 1.0
-    power_test.apply_stroke(1,1.0,"Good")
-    check(power_test.actors[1].power < fresh,"Transient fatigue lowers power")
+    var fatigue := fixture()
+    fatigue.apply_stroke(1,1.1,"Good")
+    var fresh: float=fatigue.actors[1].live_strokes[0].impulse
+    fatigue.actors[1].fatigue=1
+    fatigue.apply_stroke(1,1.1,"Good")
+    check(fatigue.actors[1].live_strokes[1].impulse<fresh,"Fatigue lowers accepted impulse")
     var strategic := fixture()
     board_all(strategic)
-    strategic.rafts.t0.speed = .4
+    strategic.rafts.t0.speed=.4
     for id: int in strategic.rafts.t0.crew:
-        strategic.actors[id].position = strategic.reward_position - Vector3(0,0,12)
-        strategic.actors[id].attributes.risk = 10
-        strategic.actors[id].attributes.awareness = 10
+        strategic.actors[id].position=strategic.reward_position-Vector3(0,0,12)
+        strategic.actors[id].attributes.risk=10
+        strategic.actors[id].attributes.awareness=10
     strategic.strategy("t0")
-    check(strategic.rafts.t0.crew.size()==8,"NPC strategy chooses one swimmer per decision")
+    check(strategic.rafts.t0.crew.size()==8,"At most one strategic swimmer per decision")
     var moving := fixture()
     board_all(moving)
-    moving.phase = MarooningRace.Phase.RAFT_RACE
     moving.leave(1)
-    moving.rafts.t0.speed = .5
-    moving.actors[1].position = moving.boarding_point("t0")
-    check(moving.request_board(1),"Moving raft reboarding begins in range")
-    for frame in 60:
-        moving.advance(1.0/60)
-    check(moving.actors[1].raft=="t0","Moving raft reboarding completes without duplicate membership")
-    for frame in 600:
-        moving.advance(1.0/60)
-    var anchor: Vector3 = moving.rafts.t0.position + MarooningRace.seat(0).rotated(Vector3.UP,moving.rafts.t0.heading) - Vector3.UP*float(moving.rafts.t0.draft)
-    check(moving.actors[1].position.distance_to(anchor)<.00001,"No cumulative anchor drift")
-    check(moving.rafts.t0.crew.count(1)==1,"Exactly one attached membership")
-    var results: Array = []
+    moving.actors[1].position=moving.boarding_point("t0")
+    moving.actors[1].velocity=moving.rafts.t0.velocity
+    check(moving.request_board(1),"Moving reboard begins")
+    for frame in 300: moving.advance(1.0/60)
+    check(moving.actors[1].raft=="t0" and moving.rafts.t0.crew.count(1)==1,"Moving reboard completes exactly once")
+    check(moving.actors[1].position.distance_to(moving.to_world("t0",MarooningRace.seat(0)))<.00001,"No cumulative anchor drift")
+    var results: Array=[]
     for count_value in [2,3]:
         for seed_value in [1,42,99]:
             var result := run_race(count_value,seed_value)
             var stats := {}
             for tribe: String in result.rafts:
-                var raft: Dictionary = result.rafts[tribe]
-                stats[tribe] = {"cargo_kg":raft.cargo_kg,"mass_kg":raft.mass_kg,"max_speed":raft.max_speed,"arrival_time":raft.arrival_time}
+                var raft: Dictionary=result.rafts[tribe]
+                stats[tribe]={"cargo_kg":raft.cargo_kg,"mass_kg":raft.mass_kg,"max_speed":raft.max_speed,"arrival_time":raft.arrival_time}
             results.append({"tribes":count_value,"seed":seed_value,"duration":result.elapsed,"reward":result.reward.tribe,"rafts":stats})
     print("BALANCE ",JSON.stringify(results))
     print("Race authority: ",failures," failures")

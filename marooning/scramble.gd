@@ -5,7 +5,8 @@ extends RefCounted
 enum Phase { INTRODUCTION, READY, SCRAMBLE_ACTIVE, SCRAMBLE_COMPLETE }
 enum State { ABOARD, CARRIED, DROPPED, FLOATING, SECURED, ABANDONED }
 var phase := Phase.INTRODUCTION
-var duration := 120.0
+const COLLECTION_SECONDS := 60.0
+var duration := COLLECTION_SECONDS
 var elapsed := 0.0
 var tick := 0
 var configuration: Dictionary
@@ -22,6 +23,33 @@ var seed_value := 1
 var rng := RandomNumberGenerator.new()
 var cooldowns: Dictionary = {}
 var contributions: Dictionary = {}
+var closed_tribes: Dictionary = {}
+
+func eligible(actor: int) -> bool:
+    return actors.has(actor) and not closed_tribes.has(actors[actor].tribe) and str(actors[actor].get("place","deck")) == "deck"
+
+func close_tribe(tribe: String, at: float) -> void:
+    if closed_tribes.has(tribe): return
+    closed_tribes[tribe] = at
+    for actor: int in actors:
+        if actors[actor].tribe != tribe: continue
+        cancel(actor,"launch")
+        release_on_deck(actor,actors[actor].get("last_deck_position",actors[actor].position),"launch")
+
+func cancel(actor: int, reason: String) -> void:
+    if not pending.has(actor): return
+    var command: Dictionary = pending[actor]
+    record(actor,command.item,command.action,"cancelled_"+reason,int(command.get("victim",0)))
+    pending.erase(actor)
+
+func release_on_deck(actor: int, point: Vector3, reason: String) -> void:
+    cancel(actor,reason)
+    var id := carried(actor)
+    if id.is_empty(): return
+    items[id].state = State.DROPPED
+    items[id].actor = 0
+    items[id].position = point
+    record(actor,id,"departure_drop","success")
 
 func configure(config: Dictionary, roster: Dictionary, anchors: Array[Vector3], loading: Dictionary, access: Array[Vector3]) -> void:
     configuration = config.duplicate(true)
@@ -67,7 +95,8 @@ func rating(actor: int, key: String) -> float:
     return clampf(float(actors[actor].attributes.get(key, 5)), 1, 10)
 
 func request(actor: int, action: String, id: String, accessible := true) -> bool:
-    if phase != Phase.SCRAMBLE_ACTIVE or suspended or pending.has(actor) or not actors.has(actor) or not items.has(id) or not accessible:
+    var deck_drop := action=="drop" and actors.has(actor) and str(actors[actor].get("place","deck"))=="deck" and phase in [Phase.SCRAMBLE_ACTIVE,Phase.SCRAMBLE_COMPLETE]
+    if (not deck_drop and (phase != Phase.SCRAMBLE_ACTIVE or elapsed>=duration or not eligible(actor))) or suspended or pending.has(actor) or not actors.has(actor) or not items.has(id) or not accessible:
         return false
     if action == "throw" or (action=="steal" and float(cooldowns.get(actor,0))>elapsed):
         return false
@@ -83,17 +112,19 @@ func request(actor: int, action: String, id: String, accessible := true) -> bool
     return true
 
 func valid(actor: int, action: String, id: String) -> bool:
+    if not actors.has(actor) or not items.has(id): return false
+    if action!="drop" and not eligible(actor): return false
     var item: Dictionary = items[id]
     var point: Vector3 = actors[actor].position
     if action == "steal":
         var victim := int(item.actor)
-        return (pending.has(actor) or float(cooldowns.get(actor,0))<=elapsed) and carried(actor).is_empty() and item.state == State.CARRIED and victim != actor and actors.has(victim) and point.distance_to(actors[victim].position) <= (2.15 if pending.has(actor) else 1.95) and float(cooldowns.get(victim,0)) <= elapsed
+        return (pending.has(actor) or float(cooldowns.get(actor,0))<=elapsed) and carried(actor).is_empty() and item.state == State.CARRIED and victim != actor and eligible(victim) and point.distance_to(actors[victim].position) <= (2.15 if pending.has(actor) else 1.95) and float(cooldowns.get(victim,0)) <= elapsed
     if action == "pickup":
         return carried(actor).is_empty() and item.state in [State.ABOARD,State.DROPPED] and point.distance_to(item.position) <= (1.9 if pending.has(actor) else 1.75)
     if item.state != State.CARRIED or item.actor != actor:
         return false
     if action == "drop":
-        return true
+        return str(actors[actor].get("place","deck"))=="deck"
     if action == "load":
         return in_unloading_area(actor)
     return false
@@ -120,21 +151,28 @@ func auto_deposit(access_check: Callable) -> void:
         request(actor,"load",held,clear)
 
 func advance(delta: float, access_check: Callable = Callable()) -> void:
-    if phase != Phase.SCRAMBLE_ACTIVE or suspended:
+    advance_to(elapsed+maxf(delta,0),access_check)
+
+func advance_to(game_time: float, access_check: Callable = Callable()) -> void:
+    if phase not in [Phase.SCRAMBLE_ACTIVE,Phase.SCRAMBLE_COMPLETE] or suspended:
         return
-    auto_deposit(access_check)
-    elapsed = minf(elapsed + maxf(delta,0), duration)
+    if phase==Phase.SCRAMBLE_ACTIVE: auto_deposit(access_check)
+    elapsed = maxf(elapsed,game_time)
     tick += 1
     var order := pending.keys()
     order.sort_custom(func(a: int,b: int) -> bool: return pending[a].at < pending[b].at if pending[a].at != pending[b].at else a < b)
     for actor: int in order:
         var command: Dictionary = pending[actor]
         # Expiry cancels unfinished actions; completions at exactly duration count.
-        if command.at > elapsed:
+        if float(command.at) > elapsed+.000001:
             continue
         var id: String = command.item
         var action: String = command.action
-        var allowed := valid(actor,action,id)
+        if action!="drop" and float(command.at)>duration+.000001 and elapsed+.000001>=duration:
+            record(actor,id,action,"expired",int(command.get("victim",0)))
+            pending.erase(actor)
+            continue
+        var allowed := valid(actor,action,id) and (action=="drop" or float(command.at)<=duration+.000001)
         if access_check.is_valid():
             allowed = allowed and access_check.call(actor,action,id)
         var victim := int(command.get("victim",0))
@@ -165,7 +203,10 @@ func advance(delta: float, access_check: Callable = Callable()) -> void:
             items[id] = item
         record(actor,id,action,"success" if allowed else "failed",victim)
         pending.erase(actor)
-    if elapsed >= duration:
+    var all_secured := true
+    for item: Dictionary in items.values():
+        if item.state!=State.SECURED: all_secured=false
+    if phase==Phase.SCRAMBLE_ACTIVE and (elapsed+.000001 >= duration or all_secured):
         for actor: int in pending:
             record(actor,pending[actor].item,pending[actor].action,"expired")
         pending.clear()
@@ -178,11 +219,11 @@ func record(actor: int, id: String, action: String, outcome: String, victim := 0
     for other: int in actors:
         if other != actor and actors[other].position.distance_to(actors[actor].position) < 6:
             witnesses.append(other)
-    events.append({"tick":tick,"elapsed":elapsed,"actor":actor,"tribe":actors[actor].tribe,
+    events.append({"source":"supplies","tick":tick,"elapsed":elapsed,"actor":actor,"tribe":actors[actor].tribe,
         "victim":victim,"victim_tribe":actors[victim].tribe if actors.has(victim) else "",
         "against_tribemate":actors.has(victim) and actors[victim].tribe == actors[actor].tribe,
         "instance":id,"type":items[id].type,"action":action,"outcome":outcome,"nearby_witnesses":witnesses})
-    if events.size() > 512:
+    if events.size() > 8192:
         events.pop_front()
 
 func result(routes: Dictionary) -> Dictionary:
@@ -191,10 +232,11 @@ func result(routes: Dictionary) -> Dictionary:
         secured[tribe.id] = []
     var unsecured: Array[Dictionary] = []
     for item: Dictionary in items.values():
+        var row := item.duplicate(true)
+        row.merge({"mass_kg":definitions[item.type].mass_kg,"quantity":definitions[item.type].quantity,"unit":definitions[item.type].unit,"definition_version":1},true)
         if item.state == State.SECURED:
-            secured[item.tribe].append(item.duplicate(true))
+            secured[item.tribe].append(row)
         else:
-            var row := item.duplicate(true)
             if row.state == State.CARRIED:
                 row.position = actors[row.actor].position
             unsecured.append(row)
