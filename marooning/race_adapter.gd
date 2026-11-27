@@ -120,6 +120,8 @@ func transition_clear(id: int, from: Vector3, to: Vector3, seconds: float, deck:
         prior=point
     return true
 func begin_transition(id: int, from: Vector3, to: Vector3, seconds: float, deck: bool) -> void:
+    # Resolve the real endpoint before the arc, including underway shallow exits.
+    to.y=maxf(to.y,preview.layout.bed(to.x,to.z)+.04)
     previous_attachment[id]=false
     previous_membership[id]=false
     simulation.actors[id].mode="jumping"
@@ -223,16 +225,17 @@ func move_npc(id: int, delta: float) -> void:
 func watch_progress(id: int, goal: Vector3, delta: float) -> void:
     var body: CampPhysicalMotor=preview.cast[id]
     var gap := MarooningRace.planar(body.position,goal)
+    var below_surface := body.position.y<preview.layout.bed(body.position.x,body.position.z)-.5
     if not progress.has(id): progress[id]={"gap":gap,"seconds":0.0,"attempts":0,"goal":goal,"total_stall":0.0}
     var row: Dictionary=progress[id]
-    if gap<float(row.gap)-.18:
+    if not below_surface and gap<float(row.gap)-.18:
         row.total_stall=0.0
-    elif gap>1.2: row.total_stall+=delta
-    if gap<float(row.gap)-.18 or MarooningRace.planar(row.goal,goal)>2:
+    elif gap>1.2 or below_surface: row.total_stall+=delta
+    if not below_surface and (gap<float(row.gap)-.18 or MarooningRace.planar(row.goal,goal)>2):
         row.gap=gap
         row.seconds=0.0
         row.goal=goal
-    elif gap>1.2:
+    elif gap>1.2 or below_surface:
         row.seconds+=delta
     if float(row.seconds)>4:
         row.attempts+=1
@@ -241,7 +244,7 @@ func watch_progress(id: int, goal: Vector3, delta: float) -> void:
         water_routes[id]={"point":body.position+offset,"until":simulation.elapsed+2}
         simulation.event("navigation_retry",id)
     if float(row.total_stall)>=45 and int(row.attempts)>=8 and not assists.has(id):
-        if safe_assist(id,goal,int(row.attempts),"45s_without_route_progress"):
+        if safe_assist(id,goal,int(row.attempts),"below_surface_after_45s" if below_surface else "45s_without_route_progress"):
             row.total_stall=0.0
             row.seconds=0.0
 func safe_assist(id: int,goal: Vector3,attempts: int,reason: String) -> bool:
@@ -253,11 +256,17 @@ func safe_assist(id: int,goal: Vector3,attempts: int,reason: String) -> bool:
     var forward := goal-from
     forward.y=0
     forward=forward.normalized()
+    if forward.is_zero_approx(): forward=Vector3(0,0,1)
+    var below_surface := from.y<preview.layout.bed(from.x,from.z)-.5
     var shape := CapsuleShape3D.new()
     shape.radius=.37
     shape.height=1.69
     var chosen := Vector3.INF
-    for offset: Vector3 in [Vector3(forward.z,0,-forward.x)*2.4,Vector3(-forward.z,0,forward.x)*2.4,-forward*2.4]:
+    var offsets: Array[Vector3]=[Vector3(forward.z,0,-forward.x)*2.4,Vector3(-forward.z,0,forward.x)*2.4,-forward*2.4]
+    # A fallen-through actor must restart outside the arrival region, behind
+    # its objective, then physically return. Never award arrival during a fade.
+    if below_surface: offsets=[-forward*8.5,Vector3(forward.z,0,-forward.x)*8.5,Vector3(-forward.z,0,forward.x)*8.5]
+    for offset: Vector3 in offsets:
         var point := from+offset
         if offset.dot(forward)>.05: continue
         if point.distance_to(simulation.reward_position)<6 or MarooningRace.planar(point,simulation.rafts[state.tribe].shore_center)<8: continue
@@ -268,7 +277,7 @@ func safe_assist(id: int,goal: Vector3,attempts: int,reason: String) -> bool:
             if hit.is_empty() or absf(hit.position.y-preview.layout.deck_y)>.3 or hit.normal.y<.7: continue
             point.y=hit.position.y+.035
         else:
-            if preview.layout.bed(point.x,point.z)>-.3: continue
+            if not below_surface and preview.layout.bed(point.x,point.z)>-.3: continue
             point.y=maxf(-1.07,preview.layout.bed(point.x,point.z)+.035)
         var query := PhysicsShapeQueryParameters3D.new()
         query.shape=shape

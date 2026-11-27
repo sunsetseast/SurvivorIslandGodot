@@ -208,6 +208,8 @@ func _resolve_state() -> void:
     else: primary.hide()
     var objective := "Fishing reward" if not race.reward_resolved() else "Your shore"
     message.text="%s · %dm\n%s" % [objective,ceili(preview.player.position.distance_to(race.actor_objective(id))),preview.race.feedback]
+    if raft.arrived and MarooningRace.planar(preview.player.position,raft.position)<10 and preview.player.position.z<raft.position.z+10:
+        message.text="Go around the raft toward your shore.\nYour tribe is regrouping."
 func execute(action: String) -> void:
     var id := int(preview.configuration.selected)
     match action:

@@ -271,7 +271,10 @@ func _ship(tribe_count: int) -> void:
             body.add_child(collision)
             part.add_child(body)
     # Continuous safety floor beneath all designated cargo circulation areas.
-    box("OpenDeck", Vector3(0, layout.deck_y - .13, 1.5), Vector3(8, .26, 16), wood)
+    var deck := box("OpenDeck", Vector3(0, layout.deck_y - .13, 1.5), Vector3(8, .26, 16), wood)
+    deck.mesh=MarooningShipAccess.open_mesh(deck.mesh,deck.global_transform,layout,tribe_count)
+    var deck_body: StaticBody3D=deck.get_child(0)
+    (deck_body.get_child(0) as CollisionShape3D).shape=deck.mesh.create_trimesh_shape()
     box("HostPlatform", Vector3(0, layout.deck_y + 2.6, -11.5), Vector3(7.6, .4, 4), wood)
     for stair_x: float in [-3.0,3.0]:
         var ramp := box("StairCollisionRamp",Vector3(stair_x,3.43,-5.75),Vector3(1.05,.16,6.0),wood)
@@ -318,7 +321,7 @@ func _access_ramps(tribe_count: int) -> void:
         mark("access-water-%d"%index,Vector3(side*5.8,-1.07,gate.z+3.1))
         var ramp := box("TimberSideAccess%d"%index,Vector3(side*5.45,1.167,gate.z),Vector3(length,.16,2.2),wood)
         ramp.rotation.z=-side*angle
-        box("GateThreshold%d"%index,Vector3(side*3.7,layout.deck_y-.07,gate.z),Vector3(.8,.14,2.2),wood)
+        _gate_threshold(gate)
         for i in 11:
             var x := 4.1+float(i)*.26
             var y := 1.9-(x-4.05)*1.32/2.8
@@ -332,6 +335,37 @@ func _access_ramps(tribe_count: int) -> void:
             rail.rotation.z=PI/2-side*angle
         var sign_mesh := box("OpenSideGate",Vector3(side*3.9,2.65,gate.z-1.28),Vector3(.5,.4,.08),wood,false)
         sign_mesh.set_meta("access_index",index)
+
+func _gate_threshold(gate: Vector3) -> void:
+    # Continuous timber bevel covers the ramp/deck join. A vertical box edge
+    # catches a returning capsule even when its floor probe sees only the ramp.
+    var side := signf(gate.x)
+    var end_y := 1.167+(5.45-4.2)*1.32/2.8+.08/cos(atan2(1.32,2.8))
+    var points := PackedVector3Array()
+    for y_index in 2:
+        for pair: Vector2 in [Vector2(2.9,-1.1),Vector2(2.9,1.1),Vector2(4.2,1.1),Vector2(4.2,-1.1)]:
+            var top := layout.deck_y if pair.x<3 else end_y
+            points.append(Vector3(side*pair.x,top if y_index else 1.6,gate.z+pair.y))
+    var surface := SurfaceTool.new()
+    surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+    for face: Array in [[0,3,2,1],[4,5,6,7],[0,1,5,4],[3,7,6,2],[0,4,7,3],[1,2,6,5]]:
+        var normal := (points[face[1]]-points[face[0]]).cross(points[face[2]]-points[face[0]]).normalized()*side
+        for triangle: Array in [[0,1,2],[0,2,3],[2,1,0],[3,2,0]]:
+            for index: int in triangle:
+                surface.set_normal(normal)
+                surface.add_vertex(points[face[index]])
+    var node := MeshInstance3D.new()
+    node.name="BeveledGateThreshold"
+    node.mesh=surface.commit()
+    node.material_override=wood
+    add_child(node)
+    var body := StaticBody3D.new()
+    node.add_child(body)
+    var collision := CollisionShape3D.new()
+    var hull := ConvexPolygonShape3D.new()
+    hull.points=points
+    collision.shape=hull
+    body.add_child(collision)
 
 func cut_stair(triangle: PackedVector3Array, bounds: AABB) -> PackedVector3Array:
     # Subtract only the stair corridor from broad imported wall/rail triangles.

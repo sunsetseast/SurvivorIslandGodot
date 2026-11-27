@@ -150,9 +150,9 @@ func leave(id: int) -> bool:
     var index := int(actor.seat_index)
     var side := -1.0 if index%2==0 else 1.0
     actor.position=to_world(actor.tribe,Vector3(side*2.85,-1.55,clampf(float(index/2)-1.0,-2,2)))
-    if raft.state=="grounded":
-        var bed_y: float=raft.shore_center.y+(actor.position.z-raft.shore_center.z)*.09
-        actor.position.y=maxf(actor.position.y,bed_y+.04)
+    # A voluntary jump can happen just before grounding in shallow water too.
+    var bed_y: float=raft.shore_center.y+(actor.position.z-raft.shore_center.z)*.09
+    actor.position.y=maxf(actor.position.y,bed_y+.04)
     raft.crew.erase(id)
     actor.raft=""
     actor.place="swimming"

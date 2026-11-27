@@ -47,6 +47,26 @@ func run() -> void:
     check(secured==0 and preview.session.scramble.items.size()==50,"No fabricated cargo or lost identities")
     check(not preview.race.safe_assist(18,goal,100,"human_fixture"),"Human can never be silently moved")
     check(preview.player.position.distance_to(human_before)<.2,"Human remains under own controller")
+    # Separate catastrophic-physics fixture: near-zero horizontal distance must
+    # not hide a contestant below the surface. Restart behind the dry region.
+    var shore: Vector3=preview.session.race.rafts[state.tribe].shore_center
+    body.position=Vector3(shore.x,-5,shore.z-1.8)
+    state.position=body.position
+    state.place="swimming"
+    state.arrived=false
+    state.recovered=false
+    preview.race.progress.erase(id)
+    var dry_goal := Vector3(shore.x,shore.y,shore.z-1.8)
+    for step in 2800:
+        preview.session.advance(MarooningSession.STEP)
+        preview.race.watch_progress(id,dry_goal,MarooningSession.STEP)
+        if step%60==0: await physics_frame
+    for frame in 40: await physics_frame
+    check(preview.session.recoveries.size()==2,"Below-surface progress also has a bounded explicit fallback")
+    check(state.recovered and not state.arrived,"Repair cannot manufacture confirmed arrival")
+    check(MarooningRace.planar(body.position,preview.session.race.rafts[state.tribe].shore_center)>8,"Repaired NPC must physically return from outside arrival region")
+    check(body.position.y>=preview.layout.bed(body.position.x,body.position.z),"Repair destination is above real surface")
+    check(preview.session.race.reward.status=="available","Surface repair cannot award reward")
     print("RECOVERY_FIXTURE ",preview.session.recoveries)
     preview.queue_free()
     await process_frame

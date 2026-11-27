@@ -28,7 +28,7 @@ cp tonsai/*.gd tonsai/*.tscn "$stage/tonsai/"
 cp tonsai/shaders/*.gdshader "$stage/tonsai/shaders/"
 cp tools/marooning/*.gd "$stage/tools/marooning/"
 cp tools/tonsai/bake_nav.gd tools/tonsai/bake_server_collision.gd "$stage/tools/tonsai/"
-cp tests/vessel_progress_test.gd tests/traffic_metrics.gd tests/marooning_pose_test.gd tests/navigation_recovery_test.gd tests/native_marooning_touch_test.gd tests/session_test.gd tests/stroke_impulse_test.gd tests/moving_board_test.gd tests/ship_access_test.gd tests/concurrent_physical_test.gd tests/deck_layout_test.gd tests/supply_visual_test.gd tests/deck_traffic_test.gd tests/deposit_test.gd tests/race_ui_test.gd tests/race_balance.gd tests/race_test.gd tests/race_physical_test.gd tests/scramble_test.gd tests/marooning_test.gd tests/phase4c_test.gd tests/phase4c_camp_test.gd tests/tonsai_test.gd tests/application_test.gd tests/credential_test.gd tests/benchmark_test.gd tests/title_test.gd tests/selection_test.gd "$stage/tests/"
+cp tests/shallow_exit_test.gd tests/vessel_progress_test.gd tests/traffic_metrics.gd tests/marooning_pose_test.gd tests/navigation_recovery_test.gd tests/native_marooning_touch_test.gd tests/session_test.gd tests/stroke_impulse_test.gd tests/moving_board_test.gd tests/ship_access_test.gd tests/concurrent_physical_test.gd tests/deck_layout_test.gd tests/supply_visual_test.gd tests/deck_traffic_test.gd tests/deposit_test.gd tests/race_ui_test.gd tests/race_balance.gd tests/race_test.gd tests/race_physical_test.gd tests/scramble_test.gd tests/marooning_test.gd tests/phase4c_test.gd tests/phase4c_camp_test.gd tests/tonsai_test.gd tests/application_test.gd tests/credential_test.gd tests/benchmark_test.gd tests/title_test.gd tests/selection_test.gd "$stage/tests/"
 cp character_lab/actor.gd "$stage/character_lab/"
 cp character_lab/assets/maeve.glb "$stage/character_lab/assets/"
 cp icon.svg "$stage/" 2>/dev/null || true
@@ -109,6 +109,7 @@ run_godot --script res://tests/supply_visual_test.gd
 run_godot --script res://tests/deposit_test.gd
 run_godot --fixed-fps 60 --script res://tests/deck_traffic_test.gd
 run_godot --fixed-fps 60 --script res://tests/vessel_progress_test.gd
+run_godot --fixed-fps 60 --script res://tests/shallow_exit_test.gd
 run_godot --fixed-fps 60 --script res://tests/marooning_pose_test.gd
 run_godot --fixed-fps 60 --script res://tests/navigation_recovery_test.gd
 run_godot --script res://tests/session_test.gd
