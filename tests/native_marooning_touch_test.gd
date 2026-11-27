@@ -155,13 +155,20 @@ func run() -> void:
             check(preview.session.elapsed>=60,"Full minute collecting route")
         await walk(Vector3(signf(gate.x)*1.35,preview.layout.deck_y,preview.player.position.z),.5,15)
         await walk(Vector3(signf(gate.x)*1.35,preview.layout.deck_y,gate.z),.5,15)
-        await walk(gate,.4,15)
-        var jumped := await action("jump_deck")
-        if not jumped:
-            await walk(gate+Vector3(0,0,.65),.3,8)
-            jumped=await action("jump_deck")
+        await walk(gate,.15,15)
+        var jumped := false
+        for attempt in 3:
+            await action("jump_deck")
+            jumped=preview.race.transitions.has(selected)
+            if jumped: break
+            print("JUMP_TOUCH_BLOCKED ",{"position":preview.player.position,"reason":preview.race.feedback,"attempt":attempt})
+            # A tapped button is not an accepted jump. Follow the ordinary
+            # access feedback, clear the approach physically and retry input.
+            await walk(gate+Vector3(signf(gate.x)*.15,0,attempt*.3),.12,4)
+            await frames(30)
         check(jumped and preview.race.transitions.has(selected),"Real open-side jump touch "+str(count_value))
         await frames(100)
+        check(state.place=="swimming" and preview.player.swimming(),"Side jump physically reaches clear water")
         await capture("native-%d-water"%count_value)
         if count_value==2:
             await walk(Vector3(signf(gate.x)*9.8,-1.07,preview.player.position.z),.5,15,true)
