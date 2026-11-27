@@ -18,7 +18,8 @@ var events: Array[Dictionary] = []
 var rng := RandomNumberGenerator.new()
 var reward := {"id":"fishing-equipment-preview","tribe":"","actor":0,"time":0.0,"method":"","mass_kg":8.0,"carrier":0,"secured":false,"location":"platform"}
 var reward_position := Vector3.ZERO
-var boarding_seconds := 18.0
+var boarding_seconds := 60.0
+var assembly_minimum := 12.0
 var timing_scale := 1.0
 var _beat := -1
 var _strategy_at := 0.0
@@ -52,10 +53,24 @@ func boarding_point(tribe: String) -> Vector3:
     var raft: Dictionary = rafts[tribe]
     return raft.position + Vector3(0,.1,-4.0).rotated(Vector3.UP,raft.heading)
 
+func boarding_access(id: int) -> Vector3:
+    var actor: Dictionary = actors[id]
+    var raft: Dictionary = rafts[actor.tribe]
+    var nearest := boarding_point(actor.tribe)
+    var distance: float = actor.position.distance_to(nearest)
+    for side: float in [-2.4,2.4]:
+        for z: float in [-2.0,2.0]:
+            var point := (raft.position as Vector3)+Vector3(side,.1,z).rotated(Vector3.UP,float(raft.heading))
+            var current: float = actor.position.distance_to(point)
+            if current<distance:
+                nearest=point
+                distance=current
+    return nearest
+
 func can_board(id: int) -> bool:
     var actor: Dictionary = actors[id]
     var raft: Dictionary = rafts[actor.tribe]
-    return actor.raft.is_empty() and actor.mode != "arrived" and not raft.arrived and raft.crew.size() < int(raft.capacity) and actor.position.distance_to(boarding_point(actor.tribe)) <= 2.7
+    return actor.raft.is_empty() and actor.mode != "arrived" and not raft.arrived and raft.crew.size() < int(raft.capacity) and actor.position.distance_to(boarding_access(id)) <= 2.7
 
 func request_board(id: int, accessible := true) -> bool:
     if suspended or not accessible or not can_board(id) or pending.has(id):
@@ -69,7 +84,7 @@ func leave(id: int) -> bool:
         return false
     var raft: Dictionary = rafts[actor.raft]
     var index := int(actor.seat_index)
-    actor.position = raft.position + Vector3(-3.0 if index % 2 == 0 else 3.0,-1.6,0).rotated(Vector3.UP,raft.heading)
+    actor.position = raft.position + Vector3(-3.0 if index % 2 == 0 else 3.0,-1.6,(index/2-(int(raft.capacity)-1)/4.0)*1.0).rotated(Vector3.UP,raft.heading)
     raft.crew.erase(id)
     actor.raft = ""
     actor.mode = "swimming"
@@ -134,7 +149,7 @@ func objective(tribe: String) -> Vector3:
 func arrival_point(id: int) -> Vector3:
     var actor: Dictionary = actors[id]
     var capacity := int(rafts[actor.tribe].capacity)
-    return rafts[actor.tribe].destination + Vector3((float(actor.seat_index)-(capacity-1)*.5)*1.15,0,0)
+    return rafts[actor.tribe].destination + Vector3((float(actor.seat_index)-(capacity-1)*.5)*1.15,0,0).rotated(Vector3.UP,float(rafts[actor.tribe].heading))
 
 func actor_objective(id: int) -> Vector3:
     return reward_position if reward.tribe.is_empty() else arrival_point(id)
@@ -170,8 +185,16 @@ func step(access: Callable) -> void:
                     event("reward_secured",id)
                 event("boarded",id)
             pending.erase(id)
-    if phase == Phase.BOARDING and elapsed >= boarding_seconds:
-        phase = Phase.RAFT_RACE
+    if phase == Phase.BOARDING:
+        var assembled := true
+        for actor_id: int in actors:
+            var actor: Dictionary = actors[actor_id]
+            if actor.raft.is_empty() and (actor_id != int(configuration.selected) and int(actor.boardings)==0 or not (actor.position.y < .3 and (absf(actor.position.x)>8 or actor.position.z>18))):
+                assembled = false
+        # All NPCs try to assemble; the human may deliberately choose independent swimming.
+        if elapsed >= boarding_seconds or (elapsed >= assembly_minimum and assembled):
+            phase = Phase.RAFT_RACE
+
     if phase == Phase.BOARDING:
         for raft: Dictionary in rafts.values():
             update_mass(raft)

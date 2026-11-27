@@ -14,6 +14,7 @@ var items: Dictionary = {}
 var actors: Dictionary = {}
 var stations: Dictionary = {}
 var openings: Array[Vector3] = []
+var unloading: Dictionary = {} # Optional physical approach positions; legacy station contract retained.
 var pending: Dictionary = {}
 var events: Array[Dictionary] = []
 var suspended := false
@@ -68,13 +69,13 @@ func rating(actor: int, key: String) -> float:
 func request(actor: int, action: String, id: String, accessible := true) -> bool:
     if phase != Phase.SCRAMBLE_ACTIVE or suspended or pending.has(actor) or not actors.has(actor) or not items.has(id) or not accessible:
         return false
-    if action == "throw" or float(cooldowns.get(actor, 0)) > elapsed:
+    if action == "throw" or (action=="steal" and float(cooldowns.get(actor,0))>elapsed):
         return false
     if not valid(actor, action, id):
         return false
     var definition: Dictionary = definitions[items[id].type]
-    var seconds: float = 1.25 if action == "steal" else (definition.loading_duration if action == "load" else definition.pickup_duration)
-    pending[actor] = {"action":action,"item":id,"at":elapsed + seconds * clampf(1.15 - rating(actor,"dexterity") * .03,.8,1.12)}
+    var seconds: float = .8 if action == "steal" else (definition.loading_duration if action == "load" else definition.pickup_duration)
+    pending[actor] = {"action":action,"item":id,"started":elapsed,"at":elapsed + seconds * clampf(1.15 - rating(actor,"dexterity") * .03,.8,1.12)}
     pending[actor]["victim"] = int(items[id].actor) if action == "steal" else 0
     if action == "steal":
         cooldowns[actor] = elapsed + 5
@@ -86,20 +87,42 @@ func valid(actor: int, action: String, id: String) -> bool:
     var point: Vector3 = actors[actor].position
     if action == "steal":
         var victim := int(item.actor)
-        return carried(actor).is_empty() and item.state == State.CARRIED and victim != actor and actors.has(victim) and point.distance_to(actors[victim].position) <= 1.35 and float(cooldowns.get(victim,0)) <= elapsed
+        return (pending.has(actor) or float(cooldowns.get(actor,0))<=elapsed) and carried(actor).is_empty() and item.state == State.CARRIED and victim != actor and actors.has(victim) and point.distance_to(actors[victim].position) <= (2.15 if pending.has(actor) else 1.95) and float(cooldowns.get(victim,0)) <= elapsed
     if action == "pickup":
-        return carried(actor).is_empty() and item.state in [State.ABOARD,State.DROPPED] and point.distance_to(item.position) <= 1.35
+        return carried(actor).is_empty() and item.state in [State.ABOARD,State.DROPPED] and point.distance_to(item.position) <= (1.9 if pending.has(actor) else 1.75)
     if item.state != State.CARRIED or item.actor != actor:
         return false
     if action == "drop":
         return true
     if action == "load":
-        return point.distance_to(stations[actors[actor].tribe]) <= 1.45
+        return in_unloading_area(actor)
     return false
+
+func in_unloading_area(actor: int) -> bool:
+    var point: Vector3 = actors[actor].position
+    var tribe: String = actors[actor].tribe
+    for slot: Vector3 in unloading.get(tribe,[stations[tribe]]):
+        if absf(point.y-slot.y) < .65 and Vector2(point.x-slot.x,point.z-slot.z).length() <= (1.05 if unloading.has(tribe) else 1.45):
+            return true
+    return false
+
+func auto_deposit(access_check: Callable) -> void:
+    if unloading.is_empty(): return # Legacy callers explicitly load; physical scenes install zones.
+    # Existing in-progress commands win; a later Drop cannot replace a locked load.
+    # Sorted actors and the ordinary command processor preserve deterministic ties.
+    var ids := actors.keys()
+    ids.sort()
+    for actor: int in ids:
+        var held := carried(actor)
+        if held.is_empty() or pending.has(actor) or not in_unloading_area(actor):
+            continue
+        var clear := not access_check.is_valid() or bool(access_check.call(actor,"load",held))
+        request(actor,"load",held,clear)
 
 func advance(delta: float, access_check: Callable = Callable()) -> void:
     if phase != Phase.SCRAMBLE_ACTIVE or suspended:
         return
+    auto_deposit(access_check)
     elapsed = minf(elapsed + maxf(delta,0), duration)
     tick += 1
     var order := pending.keys()

@@ -26,9 +26,9 @@ done
 mkdir -p "$stage/tonsai/shaders" "$stage/tonsai/generated"
 cp tonsai/*.gd tonsai/*.tscn "$stage/tonsai/"
 cp tonsai/shaders/*.gdshader "$stage/tonsai/shaders/"
-cp tools/marooning/bake_nav.gd "$stage/tools/marooning/"
+cp tools/marooning/*.gd "$stage/tools/marooning/"
 cp tools/tonsai/bake_nav.gd tools/tonsai/bake_server_collision.gd "$stage/tools/tonsai/"
-cp tests/race_ui_test.gd tests/race_balance.gd tests/race_test.gd tests/race_physical_test.gd tests/scramble_test.gd tests/marooning_test.gd tests/phase4c_test.gd tests/phase4c_camp_test.gd tests/tonsai_test.gd tests/application_test.gd tests/credential_test.gd tests/benchmark_test.gd tests/title_test.gd tests/selection_test.gd "$stage/tests/"
+cp tests/deck_layout_test.gd tests/supply_visual_test.gd tests/deck_traffic_test.gd tests/deposit_test.gd tests/race_ui_test.gd tests/race_balance.gd tests/race_test.gd tests/race_physical_test.gd tests/scramble_test.gd tests/marooning_test.gd tests/phase4c_test.gd tests/phase4c_camp_test.gd tests/tonsai_test.gd tests/application_test.gd tests/credential_test.gd tests/benchmark_test.gd tests/title_test.gd tests/selection_test.gd "$stage/tests/"
 cp character_lab/actor.gd "$stage/character_lab/"
 cp character_lab/assets/maeve.glb "$stage/character_lab/assets/"
 cp icon.svg "$stage/" 2>/dev/null || true
@@ -48,6 +48,7 @@ if [[ -n "${SURVIVOR_PRIVATE_CAST:-}" ]]; then
   cp -R "$SURVIVOR_PRIVATE_CAST"/. "$stage/private_cast/"
 fi
 cp project.godot "$stage/"
+printf '\n[marooning_build]\nimplementation_sha="%s"\n' "$(git rev-parse HEAD)" >> "$stage/project.godot"
 if [[ "${TONSAI_STAGE_ONLY:-0}" == 1 ]]; then
   cp native/development-icon.svg "$stage/icon.svg"
   python3 - "$stage/project.godot" <<'NATIVE'
@@ -100,6 +101,10 @@ fi
 cp "$stage/tonsai/generated/navigation.res" tonsai/generated/navigation.res
 if [[ "${TONSAI_STAGE_ONLY:-0}" == 1 ]]; then exit 0; fi
 run_godot --script res://tests/scramble_test.gd
+run_godot --script res://tests/deck_layout_test.gd
+run_godot --script res://tests/supply_visual_test.gd
+run_godot --script res://tests/deposit_test.gd
+run_godot --fixed-fps 60 --script res://tests/deck_traffic_test.gd
 run_godot --script res://tests/race_test.gd
 run_godot --script res://tests/race_ui_test.gd
 run_godot --script res://tests/race_balance.gd

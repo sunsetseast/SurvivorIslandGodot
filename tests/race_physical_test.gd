@@ -42,6 +42,7 @@ func run() -> void:
                 var agent := NavigationAgent3D.new()
                 preview.player.add_child(agent)
                 preview.scramble.agents[18] = agent
+                preview.scramble.traffic.configure_agent(18)
                 pilot_ready = true
             if pilot_ready and sim.actors[18].raft.is_empty() and sim.actors[18].mode != "arrived":
                 # Technical pilot drives the same physical motor, never relocates.

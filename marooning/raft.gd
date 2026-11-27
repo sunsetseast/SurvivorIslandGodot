@@ -61,7 +61,11 @@ func build(members: Array, color: Color) -> void:
         pole(Vector3(0,-.2,0),.035,1.8,wood,paddle)
         block(Vector3(0,-1.05,0),Vector3(.23,.55,.06),wood,paddle)
         paddles[int(members[i])] = paddle
-    block(Vector3(0,.35,-3.5),Vector3(1,.5,.08),MarooningBay.material(color))
+    var tribal := MarooningBay.material(color)
+    block(Vector3(0,.35,-3.5),Vector3(1,.5,.08),tribal)
+    for x: float in [-2.0,2.0]:
+        for z: float in [-2.0,2.0]:
+            block(Vector3(x,.20,z),Vector3(.12,.3,.5),tribal)
 func present(raft: Dictionary, actors: Dictionary, time: float, delta: float) -> void:
     draft = move_toward(draft,float(raft.draft),delta*.15)
     position = raft.position - Vector3.UP*draft

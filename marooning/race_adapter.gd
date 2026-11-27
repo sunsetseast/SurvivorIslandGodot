@@ -17,6 +17,9 @@ var claim_button: Button
 var deck_time: Dictionary = {}
 var departure_stage: Dictionary = {}
 var last_position: Dictionary = {}
+var cargo_origins: Dictionary = {}
+var bow_owner := 0
+var shore_clear: Dictionary = {}
 
 func _ready() -> void:
     var cargo := preview.scramble.simulation.result(preview.routes)
@@ -59,8 +62,8 @@ func _ready() -> void:
     meter.custom_minimum_size = Vector2(220,28)
     panel.add_child(meter)
     paddle = button("Paddle",func() -> void: simulation.stroke(selected()))
-    paddle.custom_minimum_size.y = 80
-    board = button("Board Raft · climb",func() -> void: simulation.request_board(selected(),access(selected(),"board")))
+    paddle.custom_minimum_size.y = 90
+    board = button("Board Raft",func() -> void: simulation.request_board(selected(),access(selected(),"board")))
     rest = button("Stop Paddling",toggle_rest)
     jump = button("Jump Off",jump_off)
     claim_button = button("Claim Fishing Reward",func() -> void: simulation.claim(selected(),access(selected(),"claim")))
@@ -71,7 +74,8 @@ func selected() -> int:
 func button(text: String, callback: Callable) -> Button:
     var control := Button.new()
     control.text = text
-    control.custom_minimum_size.y = 64
+    control.custom_minimum_size.y = 90
+    control.add_theme_font_size_override("font_size",26)
     control.pressed.connect(callback)
     panel.add_child(control)
     return control
@@ -79,12 +83,17 @@ func begin() -> void:
     if started:
         return
     started = true
+    preview.scramble.traffic.slots.clear()
+    preview.scramble.traffic.yields.clear()
+    preview.scramble.traffic.parking.clear()
     var cargo := preview.scramble.simulation.result(preview.routes)
     simulation = MarooningRace.new()
     simulation.configure(preview.configuration,preview.scramble.simulation.actors,cargo,preview.routes,preview.layout.reward)
     simulation.reward.id = preview.layout.reward_id
     simulation.timing_scale = clampf(float(preview.preferences.get("paddle_timing_scale",1.0)),.7,1.8)
     meter.simulation = simulation
+    for item_id: String in preview.scramble.visuals:
+        cargo_origins[item_id] = preview.scramble.visuals[item_id].position
     for id: int in preview.cast:
         var actor: CampPhysicalMotor = preview.cast[id]
         actor.water = CampWaterSurface.new(0,preview.layout.bed)
@@ -95,7 +104,7 @@ func begin() -> void:
     preview.touch.cancel()
     panel.show()
     set_physics_process(true)
-    preview.subtitle.text = "ABANDON SHIP · 18 seconds to board\nUse the bow ramp. Reach your raft’s stern to climb aboard, or swim."
+    preview.subtitle.text = "ASSEMBLE · up to 60 seconds to board\nFollow the central bow exit. Board your colored raft at its stern, or deliberately swim."
 func toggle_rest() -> void:
     var actor: Dictionary = simulation.actors[selected()]
     actor.paddling = not actor.paddling
@@ -111,7 +120,7 @@ func jump_off() -> void:
         preview.touch.cancel()
 func access(id: int, action: String) -> bool:
     var actor: CampPhysicalMotor = preview.cast[id]
-    var target := simulation.boarding_point(simulation.actors[id].tribe) if action == "board" else preview.layout.reward
+    var target := simulation.boarding_access(id) if action == "board" else preview.layout.reward
     var query := PhysicsRayQueryParameters3D.create(actor.position+Vector3.UP*.8,target+Vector3.UP*(.8 if action == "board" else 2.0),1)
     return preview.get_world_3d().direct_space_state.intersect_ray(query).is_empty()
 func _physics_process(delta: float) -> void:
@@ -142,7 +151,12 @@ func _physics_process(delta: float) -> void:
     for id: int in preview.cast:
         var state: Dictionary = simulation.actors[id]
         var actor: CampPhysicalMotor = preview.cast[id]
+        var was_attached := actor.raft_attached
         actor.raft_attached = not state.raft.is_empty()
+        if was_attached and not actor.raft_attached:
+            actor.position = state.position
+            actor.velocity = Vector3.ZERO
+            actor.planar = Vector3.ZERO
         if actor.raft_attached:
             actor.position = vessels[state.tribe].to_global(MarooningRace.seat(int(state.seat_index)))
             actor.set_heading(simulation.rafts[state.tribe].heading)
@@ -154,6 +168,8 @@ func _physics_process(delta: float) -> void:
             simulation.leave(id)
             actor.position = state.position
             actor.raft_attached = false
+            actor.velocity = Vector3.ZERO
+            actor.planar = Vector3.ZERO
     for raft: Dictionary in simulation.rafts.values():
         simulation.update_mass(raft)
     attach_cargo()
@@ -181,25 +197,41 @@ func move_npc(id: int, delta: float) -> void:
     if actor.position.y > .4 and actor.position.z < 18:
         deck_time[id] = float(deck_time[id]) + delta
         var stage := int(departure_stage[id])
+        if bow_owner != 0 and (not preview.cast.has(bow_owner) or preview.cast[bow_owner].position.z>9.8 or preview.cast[bow_owner].position.y<.3):
+            bow_owner = 0
+        if bow_owner == 0:
+            var nearest_distance := INF
+            for candidate: int in preview.scramble.agents:
+                var body: Node3D = preview.cast[candidate]
+                if int(departure_stage.get(candidate,0)) == 0 and body.position.y>.4 and body.position.z<13:
+                    var distance := MarooningDeckTraffic.planar(body.position,Vector3(0,preview.layout.deck_y,7.5))
+                    if distance<nearest_distance:
+                        nearest_distance = distance
+                        bow_owner = candidate
         if stage == 0:
-            var agent: NavigationAgent3D = preview.scramble.agents[id]
-            agent.target_position = Vector3(0,preview.layout.deck_y,6)
-            goal = agent.get_next_path_position()
-            if actor.position.distance_to(Vector3(0,preview.layout.deck_y,6)) < 3:
-                goal = Vector3(0,preview.layout.deck_y,6)
-            if actor.position.distance_to(Vector3(0,preview.layout.deck_y,6)) < 1.2:
+            var traffic := preview.scramble.traffic
+            var centre := Vector3(0,preview.layout.deck_y,7.5)
+            if bow_owner != id:
+                var rank: int = preview.cast.keys().find(id)
+                centre = Vector3(-1.65 if rank%2==0 else 1.65,preview.layout.deck_y,7.0-(rank/2)*.90)
+            traffic.target(id,centre,"departing")
+            traffic.step(id,delta)
+            if bow_owner == id and absf(actor.position.x)<.22 and MarooningDeckTraffic.planar(actor.position,centre)<.3:
                 departure_stage[id] = 1
+                preview.scramble.agents[id].avoidance_enabled = false
+            return
         else:
-            goal = Vector3(0,preview.layout.deck_y+1.3,20)
-        if float(deck_time[id]) > 40:
-            # Genuine deck navigation failure; bounded once, visible in journal.
-            actor.position = Vector3((id%3-1)*1.0,preview.layout.deck_y+.2,6)
-            state.position = actor.position
-            deck_time[id] = -1000.0
-            departure_stage[id] = 1
-            simulation.event("navigation_recovery",id)
+            # Single-file bow access: local RVO must not push a capsule outside the narrow opening.
+            goal = Vector3(0,preview.layout.deck_y,20)
     elif simulation.rafts[state.tribe].arrived:
         goal = simulation.arrival_point(id)
+        var raft: Dictionary = simulation.rafts[state.tribe]
+        var local := (actor.position-(raft.position as Vector3)).rotated(Vector3.UP,-float(raft.heading))
+        if local.z>=6.7: shore_clear[id] = true
+        if not shore_clear.has(id):
+            var side := -1.0 if local.x<0 else 1.0
+            var point := Vector3(side*4.5,0,local.z if absf(local.x)<4 else 7.0)
+            goal = (raft.position as Vector3)+point.rotated(Vector3.UP,float(raft.heading))
     elif int(departure_stage[id]) < 4 and actor.position.z > 12:
         # Clear the bow before turning back along the OUTSIDE of the hull.
         if int(departure_stage[id]) < 2:
@@ -234,9 +266,24 @@ func move_npc(id: int, delta: float) -> void:
             goal = simulation.boarding_point(state.tribe)
     if simulation.can_board(id) and simulation.elapsed >= float(state.reconsider):
         simulation.request_board(id,access(id,"board"))
-    var direction := actor.position.direction_to(goal)
+    if preview.scramble.agents.has(id): preview.scramble.agents[id].avoidance_enabled = false
+    var direction := goal-actor.position
     direction.y = 0
-    actor.walk_direction(direction,true,delta)
+    direction = direction.normalized()*minf(1.0,direction.length()/.6)
+    # Physical passing near swimmers and landed actors; arrived humans keep control/position.
+    var forward := direction.normalized()
+    for other_id: int in preview.cast:
+        if other_id == id or not simulation.actors[other_id].raft.is_empty(): continue
+        var other: Node3D = preview.cast[other_id]
+        if absf(actor.position.y-other.position.y)>1.7: continue
+        var offset := Vector3(actor.position.x-other.position.x,0,actor.position.z-other.position.z)
+        var distance := offset.length()
+        if distance<1.05 and distance>.01:
+            direction += offset.normalized()*maxf(0,1.05-distance)*1.8
+            if forward.dot(-offset.normalized())>.6:
+                direction += Vector3(forward.z,0,-forward.x)*.8
+    direction = direction.limit_length()
+    actor.walk_direction(direction,false if actor.position.z<18 and actor.position.y>.3 else true,delta)
     if actor.position.y <= .2:
         state.mode = "swimming"
 func attach_cargo() -> void:
@@ -249,7 +296,9 @@ func attach_cargo() -> void:
         counts[item.tribe] = index+1
         var visual: Node3D = preview.scramble.visuals[id]
         var vessel: MarooningRaft = vessels[item.tribe]
-        visual.global_position = vessel.to_global(Vector3((index%2-.5)*.65,.3+(index/12)*.45,(index/2%6-2.5)*.65))
+        var slot := vessel.to_global(Vector3((index%2-.5)*.65,.3+(index/12)*.45,(index/2%6-2.5)*.65))
+        visual.global_position = (cargo_origins.get(id,slot) as Vector3).lerp(slot,clampf(simulation.elapsed/.85,0,1))
+        visual.scale = Vector3.ONE*.65
         visual.rotation.y = vessel.rotation.y
 func update_hud() -> void:
     var actor: Dictionary = simulation.actors[selected()]
@@ -261,11 +310,14 @@ func update_hud() -> void:
     rest.text = "Stop Paddling" if actor.paddling else "Begin Paddling"
     jump.visible = aboard
     claim_button.visible = simulation.reward.tribe.is_empty() and actor.position.distance_to(preview.layout.reward) < 4.5
+    if claim_button.visible:
+        board.hide()
+        paddle.hide()
     meter.visible = paddle.visible
     legend.visible = paddle.visible
     hud.text = "%.1f m/s · Crew %d · Sync %d%%\n%s" % [raft.speed,raft.crew.size(),float(raft.sync)*100,simulation.feedback]
     if simulation.phase == MarooningRace.Phase.BOARDING:
-        hud.text = "Boarding · %ds" % ceili(simulation.boarding_seconds-simulation.elapsed)
+        hud.text = "Assemble · %ds maximum\nOwn raft: %dm · follow bow exit" % [ceili(simulation.boarding_seconds-simulation.elapsed),ceili(actor.position.distance_to(simulation.boarding_point(actor.tribe)))]
     elif not simulation.reward.tribe.is_empty():
         var winner_name: String = simulation.reward.tribe
         for tribe: Dictionary in preview.configuration.tribes:
@@ -273,7 +325,7 @@ func update_hud() -> void:
                 winner_name = tribe.name
         preview.subtitle.text = "%s claimed the fishing equipment.\nHead to your tribe’s landing." % winner_name
     else:
-        preview.subtitle.text = "Race for the fishing equipment · Paddle together or swim ahead.\nAim for the centre. Your tribe steers automatically."
+        preview.subtitle.text = "Paddle together · your tribe steers automatically." if aboard else "Swim for the fishing equipment, or board your raft at a colored side or stern point."
 func finish() -> void:
     set_physics_process(false)
     preview.touch.cancel()
@@ -296,3 +348,11 @@ func finish() -> void:
     preview.subtitle.grow_vertical = Control.GROW_DIRECTION_BEGIN
     preview.subtitle.offset_top = -270
     preview.subtitle.text = text
+
+func layout_actions(area: Rect2) -> void:
+    var size := preview.get_viewport().get_visible_rect().size
+    var right := maxf(18,size.x-area.end.x+18)
+    var bottom := maxf(12,size.y-area.end.y+12)
+    panel.offset_left=-right-245
+    panel.offset_right=-right
+    panel.offset_bottom=-bottom

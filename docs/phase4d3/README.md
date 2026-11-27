@@ -134,3 +134,7 @@ merely the player touching shore. No Day 1 or permanent camp inventory is create
 Phase 4D.4 must validate the original configuration/catalog fingerprint before
 consuming this in memory. Vector3 values are native Godot data; this is NOT a
 production JSON save schema. Do not infer permanent trust or relationships.
+
+## Playability amendment
+
+Phase 4D.3.1 supersedes the earlier primitive prop, deposit, deck-traffic and departure presentation. See [the amendment](../phase4d3_1/README.md) and [its measured validation](../phase4d3_1/VALIDATION.md). Earlier phase reports remain historical evidence.
