@@ -1,4 +1,41 @@
-# Validation record — prepublication checkpoint, 2026-11-27
+# Validation record — owner-delivery checkpoint, 2026-11-27
+
+## Latest completed gameplay evidence
+
+Gameplay checkpoint `aab598ecc1d98b752dfa37e9fb840871ceacbaca` passed all
+three automatic workflows: Web Preview run46043541820, Character Lab
+run46043541968 and Tonsai Camp run46043541902. Camp includes foundation,
+isolated simulation/save, assembly/bake/regressions, dedicated-server image,
+Chromium public Web exercise and static packaging. No acceptance threshold was
+reduced. The subsequent private-brand guard changes no gameplay code.
+
+At this checkpoint genuine native GUI/touch completed two tribes in112.10s
+(37 accepted strokes) and three tribes in147.03s (full60s collection and swimmer
+route), including physical shore arrival, all own people/cargo, summary, restart
+and exit. Both had zero exceptional NPC recoveries. Final eight approved-catalog
+traffic cases delivered all60 initial cargo instances, with maximum4s carrier
+stall against the unchanged8s limit. Earlier passes and failed candidates below
+are retained as historical evidence, not claims about the live deployment.
+
+The original approved menu art was restored through private staging, with a
+negative/positive actual-export resource guard; see [PRIVATE_BRANDING.md](PRIVATE_BRANDING.md).
+The final source marker, pack hash, deployment provenance, focused hosted menu and
+marooning-entry checks, access checks and actual screenshots belong in the
+[owner-private delivery Page](https://chatgpt.com/space/page_496b9b22b710819188832b2a4753a537).
+Per the final owner brief, reuse valid full native/CI evidence and limit final
+hosted testing to affected presentation and playable access. A complete final
+hosted touch-to-arrival replay has not been certified; the native arrival passes
+above are distinct evidence. Physical iPhone Safari gameplay, listening quality
+and device performance await owner testing.
+
+Native shutdown reports eight21844-byte GL texture warnings. The same warning
+was reproduced on frozen1016476 selection-only shutdown, so it is a preexisting
+nonblocking warning rather than a newly established marooning regression. Minor
+animation/visual polish and further performance optimization are deferred. The
+completion boundary remains the marooning summary; no Day1 Camp integration,
+Phase4D.4, PR18 changes or merge are included.
+
+## Historical investigations and intermediate checkpoints
 
 Base main: `75090ff8baeea0ae51a6519d67dc74b754d906fa`.
 Starting draft PR #17: `1016476c0049363c082cdcce3f812a83c4b7f16e`.

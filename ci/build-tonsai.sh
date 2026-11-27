@@ -51,6 +51,9 @@ cp project.godot "$stage/"
 # Godot4.7.2 can notify the SceneTree from a font-import worker and crash.
 # Serialise this disposable stage's import; gameplay threading is unchanged.
 printf '\n[editor]\nimport/use_multiple_threads=false\n' >> "$stage/project.godot"
+if [[ -n "${SURVIVOR_PRIVATE_UI:-}" || "${SURVIVOR_REQUIRE_PRIVATE_BRAND:-0}" == 1 ]]; then
+  printf '\n[private_branding]\nrequired=true\n' >> "$stage/project.godot"
+fi
 printf '\n[marooning_build]\nimplementation_sha="%s"\n' "$(git rev-parse HEAD)" >> "$stage/project.godot"
 if [[ "${TONSAI_STAGE_ONLY:-0}" == 1 ]]; then
   cp native/development-icon.svg "$stage/icon.svg"
