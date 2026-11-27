@@ -181,6 +181,7 @@ func run() -> void:
             check(not state.raft.is_empty(),"Human boards moored raft through touch")
             await action("launch")
         var tested_reboard := false
+        var cleared_grounded_hull := false
         var paddles := 0
         var deadline := preview.session.elapsed+300
         while preview.session.state!=MarooningSession.State.COMPLETE and preview.session.elapsed<deadline:
@@ -206,6 +207,14 @@ func run() -> void:
                         tested_reboard=true
                         await capture("native-moving-reboard")
             elif not preview.race.transitions.has(selected) and not preview.session.race.pending.has(selected):
+                if not cleared_grounded_hull and raft.state=="grounded" and preview.player.position.z>raft.position.z-14 and preview.player.position.z<raft.position.z+10:
+                    # Steer around the visible grounded hull, rather than drive
+                    # diagonally through its side on the way to dry shore.
+                    var side := -1.0 if preview.player.position.x<raft.position.x else 1.0
+                    var outside := Vector3(raft.position.x+side*7,preview.player.position.y,preview.player.position.z)
+                    await walk(outside,.65,8)
+                    await walk(Vector3(outside.x,outside.y,raft.position.z+12),1.0,14)
+                    cleared_grounded_hull=true
                 var goal := preview.session.race.actor_objective(selected)
                 await walk(goal,1.5,3)
                 if preview.hud.command=="claim_reward": await action("claim_reward")
