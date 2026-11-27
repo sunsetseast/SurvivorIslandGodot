@@ -1,7 +1,7 @@
 class_name SurvivorGameApp
 extends Node
 
-enum Screen { MAIN, SLOTS, SETTINGS, SESSION, ACCOUNT, MULTIPLAYER, NEW_GAME, CREDITS, SELECTION }
+enum Screen { MAIN, SLOTS, SETTINGS, SESSION, ACCOUNT, MULTIPLAYER, NEW_GAME, CREDITS, SELECTION, ARRIVAL, SUPPLIES }
 const AUTOSAVE_SECONDS := 30
 
 var screen := Screen.MAIN
@@ -48,6 +48,10 @@ var division := SurvivorSeasonConfiguration.new()
 var _configured := false
 var _manual_pick: Array = []
 var _marooning: MarooningPreview
+var _opening_ticket: Dictionary = {}
+var _completed_opening: Dictionary = {}
+var _opening_sim: SeasonSimulation
+var _opening_busy := false
 var _brand_panel: VBoxContainer
 
 func _ready() -> void:
@@ -476,9 +480,15 @@ func _new(index: int) -> void:
     if _configured and config.is_empty():
         _status.text = "Invalid season configuration."
         return
-    var sim := SeasonSimulation.new(principal, GameStateData.new_id(), int(config.seed) if _configured else randi())
     if _configured:
-        sim.configure(config, contestant_catalog)
+        if not _opening_ticket.is_empty() or is_instance_valid(_marooning) or session != null:
+            return
+        _opening_ticket = {"token":GameStateData.new_id(), "configuration":config.duplicate(true),
+            "slot":index, "principal":principal, "season":GameStateData.new_id(),
+            "namespace":saves.store.storage_prefix, "account":auth.account}
+        _launch_marooning(config, true)
+        return
+    var sim := SeasonSimulation.new(principal, GameStateData.new_id(), randi())
     if _enter(sim, index, 0):
         _save(false)
 
@@ -525,6 +535,8 @@ func _session_menu() -> void:
         _status.text = "The checkpoint could not be saved."
     else:
         _button("save", "Save", _save.bind(true), row)
+        if session.view("tonsai").get("marooning_season", false):
+            _button("supplies", "Tribal Supplies", _show_supplies, row)
         _button("menu", "Main Menu", _exit_session, row)
 
 func _save(manual: bool) -> bool:
@@ -551,7 +563,9 @@ func _save(manual: bool) -> bool:
     _status.text = "Saved to slot %d" % slot
     if active_store == cloud.saves:
         cloud.schedule(slot, manual)
-        if manual:
+        if not SurvivorCloudSaveService.supports_state(session.checkpoint()):
+            _status.text += " · cloud support pending"
+        elif manual:
             _status.text += " · cloud sync pending"
     return true
 
@@ -582,7 +596,7 @@ func _menu(next: Screen, title: String, message: String) -> void:
     _selection = null
     screen = next
     _brand_panel = null
-    if next in [Screen.SESSION, Screen.SELECTION]:
+    if next in [Screen.SESSION, Screen.SELECTION, Screen.SUPPLIES]:
         _release_title()
     elif not is_instance_valid(_title_environment):
         _title_environment = IslandTitleEnvironment.new()
@@ -730,7 +744,10 @@ func _identity_changed() -> void:
         slot = 0
     saves = LocalSaveProvider.new(active_store)
     cloud.bind(active_store if signed_in else null, saves if signed_in else null)
-    if changed_namespace and screen == Screen.SESSION:
+    if changed_namespace and not _opening_ticket.is_empty():
+        _cancel_opening()
+        _main("Account ownership changed. Start a new marooning in the intended namespace.")
+    elif changed_namespace and screen in [Screen.SESSION, Screen.SUPPLIES]:
         _main("Session expired. Sign in to resume your account saves.")
     elif changed_namespace and screen == Screen.MAIN:
         _main()
@@ -883,28 +900,158 @@ func _confirm_season() -> void:
         _slots(true)
 
 func _season_storage_message() -> String:
-    return "Account season · Local checkpoints and cloud synchronization" if cloud.store != null else "Guest season · Saved locally. Sign in and explicitly import to sync."
+    return "Account season · Local checkpoints; marooning cloud support pending" if cloud.store != null else "Guest season · Saved locally. Cloud support for new seasons is pending."
 
 func _open_marooning() -> void:
     var config := division.configuration(contestant_catalog, selection_setup)
     if config.is_empty() or is_instance_valid(_marooning) or session != null:
         return
+    _launch_marooning(config, false)
+
+func _launch_marooning(config: Dictionary, permanent: bool) -> void:
     _release_title()
     for child: Node in _ui.get_children():
         _ui.remove_child(child)
         child.queue_free()
     _actions.clear()
     _marooning = load("res://marooning/preview.tscn").instantiate()
+    _marooning.permanent = permanent
     _marooning.configuration = config.duplicate(true)
     _marooning.catalog = contestant_catalog
     _marooning.preferences = profile.preferences.duplicate(true)
-    _marooning.exited.connect(_close_marooning)
+    _marooning.exited.connect(_close_marooning, CONNECT_DEFERRED)
+    if permanent:
+        _marooning.completed.connect(_arrival.bind(_opening_ticket.token), CONNECT_DEFERRED)
     add_child(_marooning)
+
+func _drop_marooning() -> void:
+    if is_instance_valid(_marooning):
+        _marooning.touch.cancel()
+        _marooning.process_mode = Node.PROCESS_MODE_DISABLED
+        remove_child(_marooning)
+        _marooning.free()
+        _marooning = null
 
 func _close_marooning() -> void:
     if not is_instance_valid(_marooning):
         return
-    remove_child(_marooning)
-    _marooning.queue_free()
-    _marooning = null
-    _tribe_review()
+    var permanent := _marooning.permanent
+    _drop_marooning()
+    if permanent:
+        _cancel_opening()
+        _slots(true)
+    else:
+        _tribe_review()
+
+func _cancel_opening() -> void:
+    _drop_marooning()
+    _opening_ticket.clear()
+    _completed_opening.clear()
+    _opening_sim = null
+    _opening_busy = false
+
+func _opening_owned() -> bool:
+    return not _opening_ticket.is_empty() and _opening_ticket.namespace == saves.store.storage_prefix \
+        and _opening_ticket.account == auth.account and not auth.recovery_pending()
+
+func _arrival(result: Dictionary, token: String) -> void:
+    if not _opening_owned() or _opening_ticket.token != token or not _completed_opening.is_empty():
+        return
+    var config: Dictionary = _opening_ticket.configuration
+    var validation := SeasonSimulation.new(_opening_ticket.principal, _opening_ticket.season, int(config.seed))
+    validation.configure(config, contestant_catalog)
+    if not SaveCodec._valid_state(validation.snapshot()):
+        if is_instance_valid(_marooning):
+            _marooning.completion_error = "Season configuration changed. Exit and start again."
+        return
+    var packet := SurvivorOpeningHandoff.build(result, config, contestant_catalog)
+    if packet.is_empty():
+        if is_instance_valid(_marooning):
+            _marooning.completion_error = "Arrival could not be validated. Restart or exit; no save was created."
+        return
+    _completed_opening = packet
+    _drop_marooning()
+    _arrival_summary()
+
+func _arrival_summary(message := "") -> void:
+    var config: Dictionary = _opening_ticket.configuration
+    var own := ""
+    var name_value := ""
+    for tribe: Dictionary in config.tribes:
+        if int(config.selected) in tribe.members:
+            own = tribe.id
+            name_value = tribe.name
+    var reward: Dictionary = _completed_opening.opening_history.reward
+    var reward_text := "Offshore reward secured" if _completed_opening.tribal_inventory[own].has(SurvivorOpeningHandoff.REWARD_ID) else ("Offshore reward unclaimed" if reward.status == "unclaimed" else "Offshore reward claimed by a rival")
+    _menu(Screen.ARRIVAL, "Welcome to camp · " + name_value,
+        "Your tribe and secured cargo have arrived.\n" + reward_text + ("\n" + message if not message.is_empty() else ""))
+    _button("begin_day1", "Begin Day 1", _begin_day1)
+    var supplies := Label.new()
+    supplies.text = SurvivorOpeningHandoff.summary(_completed_opening.tribal_inventory[own])
+    supplies.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    supplies.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    _stack.add_child(supplies)
+    _button("exit", "Exit without starting season", _abandon_opening)
+
+func _abandon_opening() -> void:
+    _cancel_opening()
+    _main()
+
+func _begin_day1() -> void:
+    if _opening_busy or _completed_opening.is_empty() or not _opening_owned():
+        return
+    _opening_busy = true
+    if _opening_sim == null:
+        var config: Dictionary = _opening_ticket.configuration
+        _opening_sim = SeasonSimulation.new(_opening_ticket.principal, _opening_ticket.season, int(config.seed))
+        _opening_sim.configure(config, contestant_catalog)
+        if not _opening_sim.initialize_opening(_completed_opening) or not SaveCodec._valid_state(_opening_sim.snapshot()):
+            _opening_sim = null
+            _opening_busy = false
+            _arrival_summary("The opening could not be validated.")
+            return
+    var index := int(_opening_ticket.slot)
+    var state := _opening_sim.snapshot()
+    var previous := saves.inspect(index)
+    # A write can commit even when its verification read fails. A retry recognizes
+    # only this exact proposed season and initial snapshot, never creates another.
+    if previous.status == "empty":
+        saves.write(index, state, 0)
+        previous = saves.inspect(index)
+    if previous.status != "valid" or previous.state != state:
+        _opening_busy = false
+        _arrival_summary("Initial checkpoint unavailable or slot changed. Keep this session open and retry; no replay is needed.")
+        return
+    var sim := _opening_sim
+    var initial_revision := int(previous.save_revision)
+    _opening_ticket.clear()
+    _completed_opening.clear()
+    _opening_sim = null
+    _opening_busy = false
+    if _enter(sim, index, initial_revision):
+        if cloud.store != null:
+            _status.text = "Saved locally · cloud support pending"
+        var fade := ColorRect.new()
+        fade.color = Color.BLACK
+        fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        fade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+        _ui.add_child(fade)
+        var tween := create_tween()
+        tween.tween_property(fade, "modulate:a", 0.0, .45)
+        tween.tween_callback(fade.queue_free)
+
+func _show_supplies() -> void:
+    if session == null or locations.camp == null:
+        return
+    locations.camp.hud.touch.cancel()
+    locations.camp.player.locked = true
+    var view := session.view("tonsai")
+    _menu(Screen.SUPPLIES, "Tribal Supplies", SurvivorOpeningHandoff.summary(view.supplies))
+    var back := _button("back", "Back to camp", _close_supplies)
+    _stack.move_child(back, 1)
+
+func _close_supplies() -> void:
+    if locations.camp != null:
+        locations.camp.hud.touch.cancel()
+        locations.camp.player.locked = is_instance_valid(locations.camp.partner)
+    _session_menu()

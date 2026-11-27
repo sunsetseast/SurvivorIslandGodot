@@ -31,7 +31,7 @@ static func decode(raw: String) -> Dictionary:
             or not GameStateData.integer(envelope.get("timestamp"), 1, 4_102_444_800) \
             or envelope.get("game_version") is not String:
         return bad
-    if state.get("ruleset") not in [SeasonSimulation.RULESET, SurvivorSeasonConfiguration.RULESET] or state.get("ruleset_version") != 1:
+    if state.get("ruleset") not in [SeasonSimulation.RULESET, SurvivorSeasonConfiguration.RULESET] or (state.get("ruleset_version") != 1 and (state.get("ruleset") != SurvivorSeasonConfiguration.RULESET or state.get("ruleset_version") != 2)):
         return {"status": "unsupported"}
     if envelope.schema == 1:
         # V1 stored camera/body pose without the dive flag.
@@ -150,4 +150,18 @@ static func _valid_configurable(state: Dictionary) -> bool:
     for location: String in locations.values():
         if not _valid_camp(state.world.get(location), roster, location, int(state.tick)):
             return false
+    if state.ruleset_version == 2:
+        if not SurvivorOpeningHandoff.valid(state, config):
+            return false
+        for camp: Dictionary in state.world.values():
+            if camp.objects.keys().size() != 2 or camp.objects.get("shelter") is not Dictionary \
+                    or camp.objects.fire.size() != 2 or camp.objects.shelter.size() != 1 \
+                    or not GameStateData.integer(camp.objects.fire.get("construction_level"), 0, 3) \
+                    or not GameStateData.integer(camp.objects.shelter.get("construction_level"), 0, 4) \
+                    or camp.objects.fire.lit and camp.objects.fire.construction_level == 0:
+                return false
+            if state.tick == 0 and camp.objects != {"fire":{"lit":false, "construction_level":0}, "shelter":{"construction_level":0}}:
+                return false
+    elif state.has("inventory_version") or state.has("tribal_inventory") or state.has("opening_history") or state.has("initialization"):
+        return false
     return true

@@ -141,6 +141,9 @@ func _resolve_state() -> void:
             var pending := false
             for other_id in other_tribe.members: pending=pending or not race.actors[int(other_id)].arrived
             rivals_pending+=int(pending)
+        if not preview.completion_error.is_empty():
+            message.text=preview.completion_error
+            return
         message.text="%d cargo ashore · %d rivals still travelling.\nPreview complete · Day 1 follows in Phase 4D.4." % [raft.delivered_ids.size(),rivals_pending]
         return
     if preview.race.transitions.has(id) or race.pending.has(id):
