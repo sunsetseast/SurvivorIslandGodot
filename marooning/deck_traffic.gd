@@ -141,7 +141,10 @@ func step(id: int, delta: float) -> void:
         if distance > .2:
             desired = Vector3(point.x-actor.position.x,0,point.z-actor.position.z).normalized() * minf(1.0,distance/.65)
         else:
-            waiting = true
+            # Reaching an approach is not delivery: a body may still be on the
+            # wrong elevation or behind collision. Keep sampling that carrier's
+            # progress until the ordinary validated deposit actually starts.
+            waiting = sim.carried(id).is_empty()
     actor.movement_speed_multiplier = (sim.multiplier(id) if not adapter.preview.race.started else 1.0) * (.88+sim.rating(id,"speed")*.018)
     if yields.has(id):
         var retreat: Dictionary = yields[id]

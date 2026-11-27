@@ -57,7 +57,10 @@ with sync_playwright() as p:
    power=.8 if distance>6 else max(.19,distance/14)
    event('touchMove',[{'x':h['x']+x*45*power,'y':h['y']+y*45*power,'id':41}])
    try:page.wait_for_function('(v)=>{let s=JSON.parse(window.survivorApp).marooning;return s.race_phase===3||s.travel>v;}',arg=s['travel']+max(.25,min(4.5,distance*.5)),timeout=12000)
-   except Exception:print('NO_PROGRESS',attempt,gx,gz,flush=True)
+   except Exception:
+    print('NO_PROGRESS',attempt,gx,gz,flush=True)
+    event('touchEnd',[])
+    return False
    s=scene();trace.append({'goal':[gx,gz],'position':[s['x'],s['y'],s['z']],'scramble_elapsed':s['scramble_elapsed'],'race_elapsed':s['race_elapsed']})
    print('WALK',round(s['x'],2),round(s['z'],2),'goal',gx,gz,'timer',s['scramble_elapsed'],s['race_elapsed'],flush=True)
   event('touchEnd',[])
@@ -106,9 +109,14 @@ with sync_playwright() as p:
    if scene()['supply_state']['action']=='steal':tap('interact');page.wait_for_timeout(1200);capture('theft-feedback')
  capture('crowd-circulation','deck');page.evaluate("window.marooningView('follow')")
  # Preparing at the safe exit before expiry is ordinary play, and avoids wasting assembly time on automation reads.
- if scene()['scramble_phase']==2:walk(0,7.5,.4,25)
+ if scene()['scramble_phase']==2:
+  walk(1.4,scene()['z'],.5,12)
+  walk(1.4,7.0,.5,20)
+  walk(0,7.5,.4,15)
  page.wait_for_function('JSON.parse(window.survivorApp).marooning.scramble_phase===3',timeout=180000);capture('boarding-guidance')
- walk(0,7.5,.65,25);walk(0,10.5,.8,15);walk(0,25,1.4,20)
+ if scene()['z']<6.5:
+  walk(1.4,scene()['z'],.5,12);walk(1.4,7,.5,20)
+ walk(0,7.5,.4,25);walk(0,10.5,.8,15);walk(0,25,1.4,20)
  s=scene();bx,bz=s['boarding_position'];outside=bx+math.copysign(4.5,bx)
  walk(outside,25,1.3,25);walk(bx+math.copysign(4,bx),bz+2,1.0,15)
  if 'board' in scene()['controls']:tap('board');page.wait_for_timeout(1500)
