@@ -165,15 +165,25 @@ func step(id: int, delta: float) -> void:
     # Ignore numerical RVO noise; stationary actors retain their heading.
     if velocity.length() < .12: velocity = Vector3.ZERO
     actor.walk_direction(velocity/maxf(.1,speed),false,delta)
-    if not samples.has(id): samples[id] = {"at":clock,"position":actor.position}
+    # Side-to-side motion is not route progress. Measure the remaining planar
+    # polyline, so wriggling against people cannot reset the stall deadline.
+    var remaining := 0.0
+    var cursor := actor.position
+    for waypoint: Vector3 in paths.get(id,PackedVector3Array()):
+        remaining += planar(cursor,waypoint)
+        cursor = waypoint
+    if goals.has(id): remaining += planar(cursor,goals[id])
+    var goal: Vector3 = goals.get(id,actor.position)
+    if not samples.has(id): samples[id] = {"at":clock,"remaining":remaining,"goal":goal}
     var sample: Dictionary = samples[id]
     if clock-float(sample.at) >= 1.0:
-        var moved := planar(actor.position,sample.position)
-        if not waiting and moved < .18:
+        var same_goal := planar(goal,sample.goal)<.15
+        var progressed := float(sample.remaining)-remaining >= .12
+        if not waiting and same_goal and not progressed:
             blocked[id] = float(blocked.get(id,0)) + clock-float(sample.at)
             stalled_seconds[id] = float(stalled_seconds.get(id,0))+clock-float(sample.at)
         else: blocked[id] = 0.0
-        samples[id] = {"at":clock,"position":actor.position}
+        samples[id] = {"at":clock,"remaining":remaining,"goal":goal}
         if float(blocked.get(id,0)) > 2.5:
             # Repath first, then release the approach for an alternate/yield. Never teleport.
             replan(id)
