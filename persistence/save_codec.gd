@@ -31,7 +31,7 @@ static func decode(raw: String) -> Dictionary:
             or not GameStateData.integer(envelope.get("timestamp"), 1, 4_102_444_800) \
             or envelope.get("game_version") is not String:
         return bad
-    if state.get("ruleset") not in [SeasonSimulation.RULESET, SurvivorSeasonConfiguration.RULESET] or (state.get("ruleset_version") != 1 and (state.get("ruleset") != SurvivorSeasonConfiguration.RULESET or state.get("ruleset_version") != 2)):
+    if state.get("ruleset") not in [SeasonSimulation.RULESET, SurvivorSeasonConfiguration.RULESET] or (state.get("ruleset_version") != 1 and (state.get("ruleset") != SurvivorSeasonConfiguration.RULESET or (state.get("ruleset_version") != 2 and state.get("ruleset_version") != 3))):
         return {"status": "unsupported"}
     if envelope.schema == 1:
         # V1 stored camera/body pose without the dive flag.
@@ -77,7 +77,7 @@ static func _valid_state(state: Dictionary) -> bool:
             return false
     return true
 
-static func _valid_camp(camp: Variant, roster: Dictionary, location: String, tick: int) -> bool:
+static func _valid_camp(camp: Variant, roster: Dictionary, location: String, tick: int, living := false) -> bool:
     if camp is not Dictionary or not GameStateData.integer(camp.get("arrivals"), 0, MAX_REVISION):
         return false
     var objects: Variant = camp.get("objects")
@@ -91,8 +91,12 @@ static func _valid_camp(camp: Variant, roster: Dictionary, location: String, tic
         if roster[id].location != location:
             continue
         var person: Variant = people.get(id)
-        if person is not Dictionary or not GameStateData.integer(person.get("deadline"), 0, tick + 112):
+        if person is not Dictionary or not GameStateData.integer(person.get("deadline"), 0, tick + (600 if living else 112)):
             return false
+        if living:
+            if person.has("remaining") and not GameStateData.integer(person.remaining, 1, 480): return false
+            for key: String in ["site", "last_activity"]:
+                if person.has(key) and not CampSimulation.ACTIVITIES.has(person[key]): return false
         var stage: Variant = person.get("stage")
         var activity: Variant = person.get("activity")
         if not stage in ["waiting", "travel", "occupied"] or activity is not String:
@@ -100,10 +104,10 @@ static func _valid_camp(camp: Variant, roster: Dictionary, location: String, tic
         if stage == "waiting":
             if not activity.is_empty():
                 return false
-        elif roster[id].controller == "human" or not CampSimulation.ACTIVITIES.has(activity) or claimed.has(activity):
+        elif (roster[id].controller == "human" and not living) or not CampSimulation.ACTIVITIES.has(activity) or int(claimed.get(activity, 0)) >= (int(LivingCampRules.CAPACITY.get(activity, 1)) if living else 1):
             return false
         else:
-            claimed[activity] = id
+            claimed[activity] = int(claimed.get(activity, 0)) + 1
         var journal: Variant = person.get("journal")
         if journal is not Array or journal.size() > CampSimulation.MAX_RECORDS:
             return false
@@ -140,7 +144,7 @@ static func _valid_configurable(state: Dictionary) -> bool:
     if not division.validate(catalog, setup.selected_id) or division.configuration(catalog, setup) != config:
         return false
     var roster := SurvivorSeasonConfiguration.roster_for(config, catalog, state.player_id)
-    if state.get("roster") != roster or state.get("controlled") != str(setup.selected_id) or state.get("phase") != "camp" or state.get("day") != floori(float(state.tick) / SeasonSimulation.TICKS_PER_DAY) + 1:
+    if state.get("roster") != roster or state.get("controlled") != str(setup.selected_id) or state.get("phase") != "camp" or state.get("day") != (LivingCampRules.calendar(int(state.get("calendar_seconds", 0))).day if state.ruleset_version == 3 else floori(float(state.tick) / SeasonSimulation.TICKS_PER_DAY) + 1):
         return false
     var locations := {}
     for tribe: Dictionary in config.tribes:
@@ -148,10 +152,10 @@ static func _valid_configurable(state: Dictionary) -> bool:
     if state.get("tribes") != locations or state.get("world") is not Dictionary or state.world.size() != locations.size() or state.get("pose") != {} and not GameStateData.pose(state.get("pose")):
         return false
     for location: String in locations.values():
-        if not _valid_camp(state.world.get(location), roster, location, int(state.tick)):
+        if not _valid_camp(state.world.get(location), roster, location, int(state.tick), state.ruleset_version == 3):
             return false
-    if state.ruleset_version == 2:
-        if not SurvivorOpeningHandoff.valid(state, config):
+    if state.ruleset_version in [2, 3]:
+        if not SurvivorOpeningHandoff.valid(state, config, state.ruleset_version == 3):
             return false
         for camp: Dictionary in state.world.values():
             if camp.objects.keys().size() != 2 or camp.objects.get("shelter") is not Dictionary \
@@ -162,6 +166,15 @@ static func _valid_configurable(state: Dictionary) -> bool:
                 return false
             if state.tick == 0 and camp.objects != {"fire":{"lit":false, "construction_level":0}, "shelter":{"construction_level":0}}:
                 return false
+        if state.ruleset_version == 3:
+            if not GameStateData.integer(state.get("calendar_seconds"), 0, 40_000_000_000) or not CampResources.valid(state.get("tribal_inventory"), locations, state.get("transaction_state")):
+                return false
+            var conditions: Variant = state.get("conditions")
+            if conditions is not Dictionary or conditions.size() != roster.size(): return false
+            for id: String in roster:
+                if conditions.get(id) is not Dictionary or conditions[id].size() != 4: return false
+                for key: String in ["nutrition", "hydration", "energy", "health"]:
+                    if not GameStateData.integer(conditions[id].get(key), 0, LivingCampRules.MAXIMUM): return false
     elif state.has("inventory_version") or state.has("tribal_inventory") or state.has("opening_history") or state.has("initialization"):
         return false
     return true

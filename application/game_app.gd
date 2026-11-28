@@ -140,6 +140,7 @@ func _suspend(value: bool) -> void:
     if suspended == value:
         return
     suspended = value
+    if session is LocalGameSession: session.set_paused(value)
     if remote != null:
         remote.suspend(value)
     if value and _account_scroll != null:
@@ -160,6 +161,8 @@ func _suspend(value: bool) -> void:
 func _physics_process(delta: float) -> void:
     if session == null or suspended:
         return
+    if session is LocalGameSession:
+        session.set_paused(screen != Screen.SESSION or (locations.camp != null and is_instance_valid(locations.camp.partner)))
     session.step(delta)
     var tick := session.current_tick()
     if locations.camp != null and tick - _last_save_tick >= int(AUTOSAVE_SECONDS / SeasonSimulation.TICK_SECONDS):

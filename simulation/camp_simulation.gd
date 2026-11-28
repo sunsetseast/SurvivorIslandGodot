@@ -20,6 +20,7 @@ const REPLIES := {
 }
 const MAX_RECORDS := 500
 
+var living := false
 var people: Dictionary = {}
 var reservations: Dictionary = {}
 var objects := {"fire": {"lit": true}}
@@ -32,7 +33,11 @@ func add(id: String, activity: String) -> void:
         _reserve(id, activity, 0)
 
 func _reserve(id: String, activity: String, tick: int) -> void:
-    reservations[activity] = id
+    if living:
+        if not reservations.has(activity): reservations[activity] = []
+        reservations[activity].append(id)
+    else:
+        reservations[activity] = id
     var person: Dictionary = people[id]
     person.activity = activity
     person.stage = "travel"
@@ -43,7 +48,11 @@ func arrived(id: String, activity: String, tick: int, rng: RandomNumberGenerator
     if person.activity != activity or person.stage != "travel" or conversations.values().has(id):
         return false
     person.stage = "occupied"
-    person.deadline = tick + rng.randi_range(44, 112)
+    person.deadline = tick + (int(LivingCampRules.DURATION[activity]) if living else rng.randi_range(44, 112))
+    if living: person.site = activity
+    if living and person.has("remaining"):
+        person.deadline = tick + int(person.remaining)
+        person.erase("remaining")
     arrivals += 1
     return true
 
@@ -51,16 +60,23 @@ func travel_failed(id: String, activity: String, tick: int) -> bool:
     var person: Dictionary = people[id]
     if person.activity != activity or person.stage != "travel" or conversations.values().has(id):
         return false
-    _release(person, tick)
+    _release(id, tick)
     return true
 
-func _release(person: Dictionary, tick: int) -> void:
-    reservations.erase(person.activity)
+func _release(id: String, tick: int) -> void:
+    var person: Dictionary = people[id]
+    if living and reservations.has(person.activity):
+        reservations[person.activity].erase(id)
+        if reservations[person.activity].is_empty(): reservations.erase(person.activity)
+        person.last_activity = person.activity
+    else:
+        reservations.erase(person.activity)
+    person.erase("remaining")
     person.activity = ""
     person.stage = "waiting"
     person.deadline = tick + 5
 
-func schedule(id: String, tick: int, physical: bool, rng: RandomNumberGenerator) -> void:
+func schedule(id: String, tick: int, physical: bool, rng: RandomNumberGenerator, condition: Dictionary = {}, profile: Dictionary = {}) -> void:
     var person: Dictionary = people[id]
     if conversations.values().has(id):
         person.deadline += 1
@@ -69,17 +85,20 @@ func schedule(id: String, tick: int, physical: bool, rng: RandomNumberGenerator)
         return
     match person.stage:
         "waiting":
-            var choices: Array = []
+            var choices: Array[String] = []
             for activity: String in ACTIVITIES:
-                if not reservations.has(activity):
+                if available(activity):
                     choices.append(activity)
             if not choices.is_empty():
-                _reserve(id, choices[rng.randi_range(0, choices.size() - 1)], tick)
+                var selected: String = LivingCampRules.choose(person, condition, profile, choices, rng) if living else choices[rng.randi_range(0, choices.size() - 1)]
+                _reserve(id, selected, tick)
         "travel":
             if not physical:
                 arrived(id, person.activity, tick, rng)
+            elif living and tick >= int(person.deadline) + 216:
+                _release(id, tick)
         "occupied":
-            _release(person, tick)
+            _release(id, tick)
 
 func respond(actor: String, target: String, topic: String, tick: int, receipt: String) -> String:
     var reply: String = REPLIES.get(target, "We should check in with the others.")
@@ -106,4 +125,20 @@ func restore(data: Dictionary) -> void:
             record.tick = int(record.tick)
         var activity: String = person.activity
         if not activity.is_empty():
-            reservations[activity] = id
+            if living:
+                if not reservations.has(activity): reservations[activity] = []
+                reservations[activity].append(id)
+            else:
+                reservations[activity] = id
+
+func available(activity: String) -> bool:
+    if not ACTIVITIES.has(activity): return false
+    return not reservations.has(activity) or living and reservations[activity].size() < LivingCampRules.CAPACITY[activity]
+
+func start(id: String, activity: String, tick: int, rng: RandomNumberGenerator) -> bool:
+    if not available(activity) or people[id].stage != "waiting": return false
+    _reserve(id, activity, tick)
+    return arrived(id, activity, tick, rng)
+
+func interrupt(id: String, tick: int) -> void:
+    if people[id].stage != "waiting": _release(id, tick)

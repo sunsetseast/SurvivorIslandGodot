@@ -134,8 +134,14 @@ static func export_cloud(cast: SurvivorContestantCatalog, output: String) -> voi
             sim = SeasonSimulation.new("a".repeat(32), ("b" if count_value == 2 else "c").repeat(32), 42)
             sim.configure(configuration, cast)
             var result := session(configuration, cast, winner == "empty", "unclaimed" if winner == "empty" else winner).result()
-            sim.initialize_opening(SurvivorOpeningHandoff.build(result, configuration, cast))
-            _write(output.path_join("opening-%d-%s.json" % [count_value, winner]), SaveCodec.encode(sim.snapshot(), 1, 1000))
+            var packet := SurvivorOpeningHandoff.build(result, configuration, cast)
+            var legacy := sim.snapshot()
+            legacy.ruleset_version = 2
+            legacy.merge(packet)
+            for camp: Dictionary in legacy.world.values(): camp.objects = {"fire":{"lit":false, "construction_level":0}, "shelter":{"construction_level":0}}
+            _write(output.path_join("opening-%d-%s.json" % [count_value, winner]), SaveCodec.encode(legacy, 1, 1000))
+            sim.initialize_opening(packet)
+            _write(output.path_join("living-%d-%s.json" % [count_value, winner]), SaveCodec.encode(sim.snapshot(), 1, 1000))
     _write(output.path_join("technical.json"), SaveCodec.encode(SeasonSimulation.new("a".repeat(32), "e".repeat(32), 42).snapshot(), 1, 1000))
 
 static func _write(path: String, value: String) -> void:

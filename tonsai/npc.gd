@@ -88,6 +88,9 @@ func _physics_process(delta: float) -> void:
         target_activity = assigned
         if not target_activity.is_empty():
             _approach = destinations[target_activity]
+            if local_host != null and not session.view(TonsaiCamp.LOCATION).get("condition", {}).is_empty():
+                var angle := float(contestant.hash() % 18) * TAU / 18.0
+                _approach += Vector3(cos(angle), 0, sin(angle)) * .7
             agent.target_position = _approach
     if target_activity.is_empty():
         walk_direction(Vector3.ZERO, false, delta)
