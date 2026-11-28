@@ -25,13 +25,16 @@ presentation coordinate differs by one ULP but the physical Vector3 is identical
 Application tests explicitly verify supplies pause, background pause, discarded
 offline delta and normal resumed advancement.
 
-Remaining: publish the verified bd29005 export/evidence to the established
-owner-only preview, verify deployed source/pack and anonymous denial, and finalize
-PR delivery notes. Owner iPhone Safari remains untested.
+Delivered: verified bd29005 export/evidence published through the established
+owner-only operation. Native deployment and saved-version source provenance pass;
+anonymous source/pack access reaches sign-in (pack HTTP 401). Authenticated HTTP
+read-back is untested because this browser has no owner session. Owner iPhone
+Safari remains untested. See VALIDATION.md for exact results and playtest steps.
+Implementation scope is complete; retain draft status and do not begin Phase 5B.
 
 Private approved assets recovered from the existing private preview export into
 /workspace/private-assets (outside public repository). Private hosting checkout:
 /workspace/private-preview. Owner-only access verified, no external visitors.
 No credentials or private URLs belong in this public checkpoint. Disposable QA
-containers: survivor-phase5a-db and survivor-phase5a-display. Synthetic cloud
+containers were survivor-phase5a-db and survivor-phase5a-display; stopped after QA. Synthetic cloud
 fixtures: /tmp/phase5a-fixtures. Do not rebuild/research completed work.
