@@ -8,6 +8,7 @@ var _physical_location := ""
 var _talk_observation: Dictionary = {}
 var _accumulator := 0.0
 var last_step_usec := 0
+var paused := false
 
 func _init(simulation: SeasonSimulation, principal: String) -> void:
     _simulation = simulation
@@ -23,6 +24,9 @@ func view(location: String) -> Dictionary:
     return _simulation.project(_principal, location)
 
 func step(elapsed: float) -> void:
+    if paused or (_simulation.ruleset_version == 3 and elapsed > 1.0) or elapsed < 0:
+        _accumulator = 0
+        return
     var interval := SeasonSimulation.TICK_SECONDS
     _accumulator = minf(_accumulator + elapsed, interval * MAX_STEPS)
     if _accumulator < interval:
@@ -35,6 +39,15 @@ func step(elapsed: float) -> void:
 
 func bind_physical_location(location: String) -> void:
     _physical_location = location
+    if _simulation.ruleset_version == 3 and _simulation.camps.has(location):
+        var camp: CampSimulation = _simulation.camps[location]
+        for id: String in camp.people:
+            var person: Dictionary = camp.people[id]
+            if _simulation.roster[id].controller == "ai" and person.stage == "occupied":
+                person["remaining"] = maxi(1, int(person.deadline) - _simulation.tick)
+                person.stage = "travel"
+                person.deadline = _simulation.tick + 24
+
     _talk_observation = {}
 
 func observe_talk(target: String, distance: float, accessible: bool) -> void:
@@ -69,3 +82,11 @@ func current_tick() -> int:
 
 func current_day() -> int:
     return _simulation.day()
+
+func set_paused(value: bool) -> void:
+    if paused == value: return
+    paused = value
+    _accumulator = 0
+
+func observe_site(site: String, distance: float, accessible: bool) -> void:
+    _talk_observation = {"location":_physical_location, "site":site, "distance":distance, "accessible":accessible}

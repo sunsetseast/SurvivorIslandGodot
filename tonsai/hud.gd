@@ -24,6 +24,12 @@ var reply: Label
 var topics: Array[Button] = []
 var close_button: Button
 var _trace_ready := false
+var condition_button: Button
+var rest_button: Button
+var drink_button: Button
+var eat_button: Button
+var condition_detail := false
+var _period := ""
 
 func _ready() -> void:
     theme = IslandTheme.create()
@@ -84,6 +90,14 @@ func _ready() -> void:
     close_button = _button("Back to camp", camp.end_talk)
     stack.add_child(close_button)
     dialog.hide()
+    condition_button = _button("Condition", func() -> void: condition_detail = not condition_detail)
+    rest_button = _button("Rest", func() -> void:
+        var view_now := camp.session.view("tonsai")
+        var active := camp.local_host.activity("tonsai", view_now.controlled)
+        camp.living_action("camp.stop" if active.stage == "occupied" else "camp.start", "shelter"))
+    drink_button = _button("Drink at well", func() -> void: camp.living_action("camp.start", "spring"))
+    eat_button = _button("Eat coconut", func() -> void: camp.living_action("camp.consume", "shelter", "coconut"))
+    for button: Button in [condition_button, rest_button, drink_button, eat_button]: add_child(button)
     get_viewport().size_changed.connect(_layout)
     _layout()
 
@@ -91,6 +105,10 @@ func _layout() -> void:
     var safe := touch.safe.grow(-16.0)
     banner.position = safe.position
     stats.position = safe.position + Vector2(1, 39)
+    condition_button.position = safe.position + Vector2(0, 72)
+    rest_button.position = safe.position + Vector2(0, 130)
+    drink_button.position = rest_button.position
+    eat_button.position = rest_button.position + Vector2(157, 0)
     quality_button.position = Vector2(safe.end.x - 147, safe.position.y)
     reset_button.position = quality_button.position - Vector2(157, 0)
     sensitivity_button.position = reset_button.position - Vector2(157, 0)
@@ -132,6 +150,26 @@ func refresh() -> void:
     var view := camp.session.view("tonsai")
     if view.get("marooning_season", false):
         banner.text = "DAY %d — CAMP PHASE" % int(view.day)
+    var condition: Dictionary = view.get("condition", {})
+    var living := not condition.is_empty()
+    condition_button.visible = living and not dialog.visible
+    rest_button.visible = living and not dialog.visible and camp.player.position.distance_to(camp.destinations[&"shelter"]) <= SeasonSimulation.REACH
+    drink_button.visible = living and not dialog.visible and camp.player.position.distance_to(camp.destinations[&"spring"]) <= SeasonSimulation.REACH
+    eat_button.visible = rest_button.visible
+    if living and camp.local_host != null:
+        var activity := camp.local_host.activity("tonsai", view.controlled)
+        rest_button.text = "Stop resting" if activity.stage == "occupied" and activity.activity == "shelter" else "Rest"
+    if living:
+        var calendar: Dictionary = view.calendar
+        banner.text = "DAY %d · %02d:%02d · %s" % [view.day, int(calendar.seconds) / 3600, int(calendar.seconds) % 3600 / 60, str(calendar.period).capitalize()]
+        stats.text = "Food %d   Water %d   Energy %d" % [condition.nutrition / LivingCampRules.SCALE, condition.hydration / LivingCampRules.SCALE, condition.energy / LivingCampRules.SCALE]
+        if condition_detail: stats.text += "   Health %d" % (condition.health / LivingCampRules.SCALE)
+        if _period != calendar.period:
+            _period = calendar.period
+            camp.terrain.set_sky_preset(TonsaiTerrain.SkyPreset.NIGHT if _period == "night" else TonsaiTerrain.SkyPreset.CLEAR)
+            if _period in ["dawn", "dusk"]:
+                camp.terrain.sun.light_energy = .45
+                camp.terrain.sun.light_color = Color("#ffc18a")
     var person := camp.nearby()
     nearby_actor = person.contestant if is_instance_valid(person) else &""
     run_button.text = "Run" if camp.player.run_toggled else "Walk"

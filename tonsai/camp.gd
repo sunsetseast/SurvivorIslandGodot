@@ -278,8 +278,17 @@ func set_economy(enabled: bool) -> void:
 func _physics_process(delta: float) -> void:
     if not loaded:
         return
-    if _standalone:
-        local_host.step(delta)
+    if local_host != null:
+        var view := session.view("tonsai")
+        if not view.get("condition", {}).is_empty():
+            var activity := local_host.activity("tonsai", view.controlled)
+            if activity.stage == "occupied":
+                var site := str(activity.activity)
+                if not destinations.has(StringName(site)) or player.position.distance_to(destinations[StringName(site)]) > SeasonSimulation.REACH:
+                    living_action("camp.stop", site)
+        if _standalone:
+            local_host.set_paused(is_instance_valid(partner))
+            local_host.step(delta)
     if is_instance_valid(partner) and (remote == null or remote.active):
         player.face_point(partner.global_position, delta)
 
@@ -378,3 +387,11 @@ func _capture(values: Array) -> void:
     capture_camera.position = CAPTURE_VIEWS[view][0]
     capture_camera.look_at(CAPTURE_VIEWS[view][1])
     capture_camera.current = true
+
+func living_action(kind: String, site: String, resource := "") -> Dictionary:
+    if local_host == null: return {}
+    var view := session.view("tonsai")
+    if not destinations.has(StringName(site)): return {}
+    local_host.observe_site(site, player.position.distance_to(destinations[StringName(site)]), true)
+    return session.submit({"id":GameStateData.new_id(), "actor":view.controlled, "kind":kind,
+        "site":site, "resource":resource, "expected_revision":view.revision})

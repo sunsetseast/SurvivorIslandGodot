@@ -186,7 +186,7 @@ static func _add_disposition(history: Dictionary, item: Dictionary) -> bool:
         "unloader":_id_text(item.get("unloader", 0))}
     return true
 
-static func valid(packet: Dictionary, config: Dictionary) -> bool:
+static func valid(packet: Dictionary, config: Dictionary, runtime := false) -> bool:
     if packet.get("inventory_version") != 1 or packet.get("tribal_inventory") is not Dictionary \
             or packet.get("opening_history") is not Dictionary or packet.get("initialization") != {"source":"marooning-v2", "day":1, "tick":0, "first_impressions_complete":false, "rng_stream":"camp-v1"}:
         return false
@@ -291,9 +291,20 @@ static func valid(packet: Dictionary, config: Dictionary) -> bool:
             return false
         if reward.secured:
             expected[reward.tribe][REWARD_ID] = reward_record()
-    # Remaining quantities may only decrease from original acquisitions. No gameplay
-    # changes them in this phase; history retains original quantities and physical mass.
-    for tribe: String in expected:
+    # Validate immutable provenance independently of current quantities and new IDs.
+    if runtime:
+        for tribe: String in expected:
+            var items: Variant = packet.tribal_inventory.get(tribe)
+            if items is not Dictionary: return false
+            for id: String in expected[tribe]:
+                var original: Dictionary = expected[tribe][id]
+                var item: Variant = items.get(id)
+                var multiplier := 1000 if original.unit in ["kg", "litre"] else 1
+                if item is not Dictionary or item.get("type") != original.type or item.get("source") != original.source or item.get("acquired_quantity") != int(original.quantity) * multiplier: return false
+            for id: String in items:
+                if not expected[tribe].has(id) and not id.begins_with("camp-"): return false
+    # Legacy v2 allows only original instances with nonincreasing stock.
+    for tribe: String in ([] if runtime else expected.keys()):
         var items: Variant = packet.tribal_inventory.get(tribe)
         if items is not Dictionary or items.keys().size() != expected[tribe].size():
             return false
@@ -352,7 +363,7 @@ static func summary(items: Dictionary) -> String:
     var totals := {}
     var definitions := MarooningSupplyCatalog.definitions()
     for item: Dictionary in items.values():
-        totals[item.type] = float(totals.get(item.type, 0)) + float(item.quantity)
+        totals[item.type] = float(totals.get(item.type, 0)) + float(item.quantity) / (1000.0 if item.unit in ["g", "ml"] else 1.0)
     var groups := {"Food":[], "Water":[], "Equipment":[], "Construction materials":[]}
     for type: String in definitions:
         if totals.has(type):
