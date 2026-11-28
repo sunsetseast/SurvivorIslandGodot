@@ -1,0 +1,14 @@
+# Asset registry — initial researched candidates (2026-11-28)
+$0. Stylized realism, natural colors/proportions, believable texture, no crude primitive/cartoon look. GLB preferred; existing Godot Compatibility pipeline. Reuse Tonsai palms/terrain and existing supply meshes in 5B.1. Invisible canteens allowed; no new asset downloads required in this phase. Listed candidates not downloaded, imported, visually approved or benchmarked. Verify license and original creator at acquisition, retain source, license text, attribution, modified status, hash, source/optimized path, actual tri count, texture size/materials, animation/pivot/collision, approval and iPhone results. Never publish private assets. No noncommercial/editorial-only models. Respect NoAI restrictions; do not feed NoAI models into AI tools or use them for automated generation.
+
+| Candidate | Source | Listing evidence | Status |
+|---|---|---|---|
+| Dead Tree Trunk 02 | https://polyhaven.com/a/dead_tree_trunk_02 | CC0, detailed scan | 5B.2 candidate; simplify |
+| Dead Tree Trunk | https://polyhaven.com/a/dead_tree_trunk | CC0 | alternate |
+| Wicker Basket 01 | https://polyhaven.com/a/wicker_basket_01 | CC0, rectangular woven model | candidate; check carry shape, simplify |
+| Free Bamboo Set, JonhGillessen | https://sketchfab.com/3d-models/free-bamboo-set-e9f9fa5397814f81bf85ad06acf5bf30 | CC BY, 37.8k tris entire set | select/optimize only useful pieces |
+| Cooking Pot (Game-Ready), Levi Giovani | https://sketchfab.com/3d-models/cooking-pot-game-ready-38f0889da545459093cdc411a0e7ae99 | CC BY, 452 tris | candidate for later cooking |
+| Coconut, Lorna Inman | https://sketchfab.com/3d-models/coconut-3396e5219f4649699bc3b357b21e72a8 | CC BY, 65k tris, painted VR artwork | NOT preferred runtime; seek simpler realistic candidate |
+| Quaternius Animated Fish Pack | https://quaternius.com/packs/animatedfish.html | CC0 | future evaluation; animation and style not yet validated |
+
+Previously suggested Lowpoly Sticks and MaX3Dd machete are marked NoAI on their listings; exclude from agent asset processing. Other previously suggested links not verified this turn remain unapproved. Seek CC0 or permitted CC BY branch/coconut/frond/rope/tool assets or create own textured low-poly meshes. Use existing supply_visual.gd for 5B.1 only; upgrade visible geometry when actual gathering/cooking requires it. Custom modular shelter, spit, sling, net and gear attachment; no need for full prebuilt hut. Fish prioritize lightweight existing rigs or original meshes/textures, no scientific high-poly scans in runtime; see AQUATIC_ECOSYSTEM.md. Initial triangles coconut 300–700, branch 100–500, frond 150–500, pole 100–400, basket 500–2000, pot 500–1500; tune rather than force. Prefer shared materials and 512–1024 textures for small props; verify visually on device. No huge downloads or broad asset hunting in 5B.1.
