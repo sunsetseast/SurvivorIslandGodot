@@ -126,6 +126,12 @@ func _initialize() -> void:
             loaded.bind_physical_location("tonsai")
             loaded.observe_site("shelter", 1, true)
             check(not loaded.submit(request).ok, "stale consumption replay fails after load")
+        camp.interrupt(traveler, sim.tick)
+        check(camp.start(traveler, "spring", sim.tick, sim.rng), "NPC recovery selected before dialogue")
+        var talk_id := GameStateData.new_id()
+        var talk := sim.command(sim.player_id, {"id":talk_id, "actor":"1", "kind":"talk.begin", "target":traveler}, {"target":traveler, "location":"tonsai", "distance":1, "accessible":true})
+        check(talk.ok and camp.people[traveler].stage == "waiting" and not camp.reservations.get("spring", []).has(traveler), "dialogue interrupts work and releases its reservation")
+        sim.command(sim.player_id, {"id":GameStateData.new_id(), "actor":"1", "kind":"talk.end", "target":traveler}, {})
         var transfer_seq := int(sim.transaction_state.sequence) + 1
         check(sim.resource_transaction("1", own, transfer_seq, "transfer", {"instance":"rice-00", "quantity":500, "destination":own}), "permitted atomic transfer retains provenance")
         check(tribe_inventory["rice-00"].quantity == 19500, "transfer removes exact base units")

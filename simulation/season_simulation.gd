@@ -103,6 +103,9 @@ func command(principal: String, request: Dictionary, observation: Dictionary) ->
                     or not GameStateData.number(observation.get("distance"), 0, REACH) \
                     or observation.get("accessible") != true:
                 return _result(id, false, "unavailable")
+            if ruleset_version == 3:
+                camp.interrupt(actor, tick)
+                camp.interrupt(target, tick)
             camp.conversations[actor] = target
             event = {"type": "conversation_opened", "with": target}
         "talk.respond":
